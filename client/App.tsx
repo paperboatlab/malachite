@@ -235,7 +235,6 @@ export function App() {
                     </span>
                   ))}
                 </div>
-                {note && <Segmented label="View" value={mode} onChange={setMode} options={[{ value: "read", label: "Read" }, { value: "edit", label: "Edit" }]} />}
               </div>
               {current && (
                 <div className="crumb">
@@ -252,7 +251,8 @@ export function App() {
                 {note && mode === "edit" && <Editor key={`${note.path}:${note.sealed}`} text={draft ?? note.text} readOnly={note.sealed} onChange={setDraft} onSave={() => draft !== null && current && save(current, draft)} />}
                 {current && t !== "md" && <FileView path={current} text={plain} />}
               </div>
-              {note && <div className="efoot"><span>markdown · {note.body.split(/\s+/).filter(Boolean).length} words · {note.cells.length} cells</span><span>{links?.backlinks.length ?? 0} backlinks · {links?.links.length ?? 0} links</span></div>}
+              {note && <div className="efoot"><span>markdown · {note.body.split(/\s+/).filter(Boolean).length} words · {note.cells.length} cells</span>
+                <Segmented label="View" value={mode} onChange={setMode} options={[{ value: "read", label: "Read" }, { value: "edit", label: "Edit" }]} /><span>{links?.backlinks.length ?? 0} backlinks · {links?.links.length ?? 0} links</span></div>}
             </section>
 
             <Panel name="Links" side="right" hidden={hideR} onHidden={setHideR} icon="references" width={300}>

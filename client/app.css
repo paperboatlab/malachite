@@ -22,6 +22,16 @@ body { background: var(--surface-ground); color: var(--text); font: 13px/1.45 va
 .muted { color: var(--text-muted); }
 .empty { flex: 1; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--text-muted); text-align: center; padding: 24px; }
 
+/* ponytail: a roomier rail, here until paperboat-ui#2 puts it in the kit. The kit moves the current page's
+   chip by a fixed 36 + 2 px a step, so Malachite restates the steps for its four pages; drop all of this then. */
+.rail { padding: 8px 5px; }
+.rail-group, .rail-foot { gap: 8px; }
+.rail-item, .rail-chip { height: 40px; }
+.rail hr { margin: 12px 6px; }
+.rail-group:has(> .rail-item:nth-of-type(2)[aria-current="page"]) > .rail-chip { transform: translateY(48px) !important; }
+.rail-group:has(> .rail-item:nth-of-type(3)[aria-current="page"]) > .rail-chip { transform: translateY(96px) !important; }
+.rail-group:has(> .rail-item:nth-of-type(4)[aria-current="page"]) > .rail-chip { transform: translateY(144px) !important; }
+
 /* file icons: our formats and languages in their app's muted accent, the rest a muted type colour */
 .fi { display: inline-flex; flex: none; }
 .fc-simplicial { color: #a85c3d; } .fc-articula { color: #4767a2; } .fc-julix { color: #675492; } .fc-malachite { color: #417565; }
@@ -57,7 +67,8 @@ body { background: var(--surface-ground); color: var(--text); font: 13px/1.45 va
 .crumb { display: flex; align-items: center; gap: 8px; padding: 0 10px 0 16px; height: 36px; border-bottom: 1px solid var(--line); flex: none; font: 11.5px var(--font-mono); color: var(--text-muted); white-space: nowrap; overflow: hidden; }
 .crumb b { font-weight: 500; color: var(--text); }
 .note .body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
-.efoot { display: flex; justify-content: space-between; gap: 8px; padding: 7px 16px; border-top: 1px solid var(--line); font: 11.5px var(--font-mono); color: var(--text-muted); flex: none; }
+.efoot { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; padding: 5px 16px; border-top: 1px solid var(--line); font: 11.5px var(--font-mono); color: var(--text-muted); flex: none; }
+.efoot > :last-child { justify-self: end; }
 .editor { flex: 1; min-height: 0; }
 .editor .cm-editor { height: 100%; }
 
