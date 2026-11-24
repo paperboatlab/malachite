@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parse, type Props } from "./note.ts";
-import type { Docs } from "./docs.ts";
+import type { Hub } from "./hub.ts";
 
 export type Item = {
   path: string;
@@ -21,17 +21,17 @@ export type Resolved = { link: string; path: string | null };
 
 export class Index {
   items = new Map<string, Item>();
-  private docs: Docs;
-  constructor(docs: Docs) { this.docs = docs; }
+  private hub: Hub;
+  constructor(hub: Hub) { this.hub = hub; }
 
   build() {
     this.items.clear();
-    for (const f of this.docs.files()) this.update(f);
+    for (const f of this.hub.files()) this.update(f);
   }
 
   /** Re-read one file; gone, it leaves the index. */
   update(rel: string) {
-    const abs = this.docs.resolve(rel);
+    const abs = this.hub.resolve(rel);
     let st: fs.Stats;
     try { st = fs.statSync(abs); } catch { this.items.delete(rel); return; }
     if (!st.isFile()) { this.items.delete(rel); return; }
@@ -42,7 +42,7 @@ export class Index {
     this.items.set(rel, { path: rel, name, type, title: n.title, props: n.props, tags: n.tags, links: n.links, cells: n.cells.length, mtime: st.mtimeMs });
   }
 
-  /** `[[x]]` to a file: a path in the docs, a note's name (case-insensitive), or any file's name with its extension. */
+  /** `[[x]]` to a file: a hub path, a note's name (case-insensitive), or any file's name with its extension. */
   resolve(link: string, from = ""): string | null {
     const l = link.replace(/\\/g, "/").replace(/^\.?\//, "");
     if (this.items.has(l)) return l;
@@ -76,7 +76,7 @@ export class Index {
   context(from: string, to: string): string {
     const it = this.items.get(from);
     if (!it || it.type !== "md") return "";
-    const text = fs.readFileSync(this.docs.resolve(from), "utf8");
+    const text = fs.readFileSync(this.hub.resolve(from), "utf8");
     for (const line of text.split("\n")) {
       for (const m of line.matchAll(/!?\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]/g)) {
         if (this.resolve(m[1].trim(), from) === to) return line.trim().slice(0, 240);

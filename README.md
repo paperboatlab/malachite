@@ -1,11 +1,11 @@
 # Paperboat Malachite
 
-An engineering notebook: notes, runs and results in one folder, the docs, with Julia and Python cells run by
+An engineering notebook: notes, runs and results in one hub, with Julia and Python cells run by
 Paperboat's runtimes. Part of [Paperboat](https://github.com/paperboatlab/paperboat).
 
-The **docs** are a folder of Markdown notes and the files around them. Notes link with `[[name]]`, carry
+A **hub** is a folder of Markdown notes and the files around them. Notes link with `[[name]]`, carry
 their properties in a front matter, and hold cells (fenced `julia` or `python` blocks) that run in the
-docs' session through `paperboatd`. Every change lands in an append-only log; a note can be sealed.
+hub's session through `paperboatd`. Every change lands in an append-only log; a note can be sealed.
 
 **Status:** v0.1, the first app on the new platform. Views, Trace and runs come next; Julix's plots and
 the other apps' embeds when those apps are rebuilt.
@@ -17,10 +17,10 @@ the other apps' embeds when those apps are rebuilt.
 ## Layout
 
 ```text
-server/       the app server (Node 22, TypeScript, no dependencies): docs, index, sessions, the API
+server/       the app server (Node 22, TypeScript, no dependencies): hub, index, sessions, the API
 client/       the page (React, @paperboatlab/ui, CodeMirror, marked), built into dist/
 bin/malachite the command
-examples/     tank-lab, docs to try it on
+examples/     tank-lab, a hub to try it on
 test/         unit tests; e2e.test.ts runs a real cell when paperboatd is there
 ```
 
@@ -37,7 +37,7 @@ npm test             # e2e.test.ts too, when paperboatd is on PATH or $PAPERBOAT
 
 ```sh
 bin/malachite examples/tank-lab          # http://127.0.0.1:59210/
-bin/malachite ~/notes --port 59300       # any folder: docs.toml is written on first open
+bin/malachite ~/notes --port 59300       # any folder: hub.toml is written on first open
 ```
 
 Cells need the Paperboat runtime daemon: `paperboatd` on PATH (the `paperboat-cli` package) or

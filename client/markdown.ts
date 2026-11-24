@@ -1,6 +1,6 @@
 // Markdown to HTML for the Read view: `marked`, plus wikilinks (`[[note]]`, `[[note|text]]`) and embeds
-// (`![[file]]`). A note is someone's text, maybe from docs someone else wrote: raw HTML is shown as text and a
-// link may only go to http(s), mailto or inside the docs.
+// (`![[file]]`). A note is someone's text, maybe from a cloned hub: raw HTML is shown as text and a
+// link may only go to http(s), mailto or inside the hub.
 import { Marked, type Tokens } from "marked";
 import { IMAGE, OWNER, typeOf } from "./files.tsx";
 
@@ -31,7 +31,7 @@ export function renderer(resolve: Resolve, here: string) {
         if (embed && IMAGE.has(type)) return `<img class="embed-img" src="${raw(p)}" alt="${esc(label)}">`;
         if (embed && type !== "md") {
           const owner = OWNER[type];
-          return `<span class="embed-card" data-wl="${esc(p)}"><b>${esc(base(p))}</b><small>${owner ? `drawn by ${owner} once it is installed; until then its name and type` : "a file in the docs"}</small></span>`;
+          return `<span class="embed-card" data-wl="${esc(p)}"><b>${esc(base(p))}</b><small>${owner ? `drawn by ${owner} once it is installed; until then its name and type` : "a file in the hub"}</small></span>`;
         }
         return `<a class="wl${embed ? " embed-link" : ""}" data-wl="${esc(p)}">${esc(label)}</a>`;
       },

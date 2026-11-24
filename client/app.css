@@ -7,7 +7,7 @@ body { background: var(--surface-ground); color: var(--text); font: 13px/1.45 va
 .win { height: 100%; box-sizing: border-box; display: grid; grid-template-columns: auto 1fr; grid-template-rows: 52px 1fr; gap: var(--gutter); padding: var(--gutter); }
 .bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 0 10px 0 12px; background: var(--surface-panel); border: 1px solid var(--line); border-radius: var(--radius-lg); }
 .bar .wm { font: 600 17px var(--font-display); letter-spacing: -0.01em; }
-.bar .docs { height: 28px; gap: 6px; font-size: 13px; margin-left: 8px; max-width: 260px; overflow: hidden; white-space: nowrap; }
+.bar .hub { height: 28px; gap: 6px; font-size: 13px; margin-left: 8px; max-width: 260px; overflow: hidden; white-space: nowrap; }
 .bend { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .lgroup { display: flex; gap: 2px; }
 .lsep { width: 1px; height: 18px; background: var(--line); }
@@ -28,7 +28,7 @@ body { background: var(--surface-ground); color: var(--text); font: 13px/1.45 va
 [data-theme="dark"] .fc-malachite { color: #99d0ba; } [data-theme="dark"] .fc-folder { color: #cdb98e; } [data-theme="dark"] .fc-amber { color: #d6bd7a; }
 [data-theme="dark"] .fc-green { color: #a8c98f; } [data-theme="dark"] .fc-steel { color: #a9b8ca; } [data-theme="dark"] .fc-rose { color: #d6a2b7; } [data-theme="dark"] .fc-slate { color: #b0b0b5; }
 
-/* the docs tree; the selected row is tinted, never a bar beside it */
+/* the hub tree; the selected row is tinted, never a bar beside it */
 .tree { padding: 6px 8px 12px; display: flex; flex-direction: column; gap: 1px; outline: none; }
 .tr { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 6px 0 calc(6px + var(--d, 0) * 14px); border-radius: var(--radius-sm); cursor: pointer; white-space: nowrap; overflow: hidden; outline: none; }
 .tr:hover { background: color-mix(in srgb, var(--surface-raised) 60%, transparent); }
@@ -84,7 +84,7 @@ body { background: var(--surface-ground); color: var(--text); font: 13px/1.45 va
 .st { font: 11.5px var(--font-mono); height: 20px; padding: 0 7px; border-radius: var(--radius-sm); border: 1px solid var(--line-strong); display: inline-flex; align-items: center; background: var(--surface-raised); }
 .tg { font: 11.5px var(--font-mono); color: var(--text-muted); background: var(--surface-sunken); border-radius: var(--radius-sm); padding: 1px 6px; }
 
-/* cells: a fenced block that runs in the docs' session (one per language); its output is kept beside the note */
+/* cells: a fenced block that runs in the hub's session; its output is kept beside the note */
 .cell { margin: 12px 0 16px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-raised); }
 .cell.run { border-color: var(--accent-select); box-shadow: 0 0 0 1px var(--accent-select); }
 .chd { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 8px 0 12px; font: 11.5px var(--font-mono); color: var(--text-muted); }

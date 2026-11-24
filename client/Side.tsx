@@ -62,7 +62,7 @@ export function RuntimesKey({ running, version }: { running: number; version: nu
       </button>
       {open && (
         <div ref={pop} className="popover rtpop" role="dialog" aria-label="Runtimes">
-          <div className="poph"><b>Runtimes</b><span>these docs · paperboat-runtime/0</span></div>
+          <div className="poph"><b>Runtimes</b><span>this hub · paperboat-runtime/0</span></div>
           {error && <p className="rterr">{error}</p>}
           {!peek && !error && <p className="rterr"><Spinner size={12} /> asking paperboatd…</p>}
           {peek?.sessions.map((s) => {
