@@ -1,0 +1,53 @@
+// The app server's API (server/main.ts), typed for the page.
+export type Entry = { path: string; name: string; kind: "dir" | "file"; size?: number; mtime?: number; children?: Entry[] };
+export type Props = Record<string, string | string[]>;
+export type Item = { path: string; name: string; type: string; title: string; props: Props; tags: string[]; links: string[]; cells: number; mtime: number };
+export type Output =
+  | { type: "stream"; name: string; text: string }
+  | { type: "display" | "result"; data: Record<string, string> }
+  | { type: "error"; error: { type?: string; message: string; traceback?: string } };
+export type Lang = "julia" | "python";
+export type Run = { note: string; hash: string; lang: Lang; state: "queued" | "running" | "done" | "failed"; ran?: string; ms?: number; outputs: Output[]; runtime?: { name: string; version: string; backend: string } };
+export type Cell = { lang: Lang; code: string; hash: string; line: number };
+export type NoteData = { path: string; text: string; props: Props; body: string; title: string; cells: Cell[]; sealed: boolean; intact?: boolean; outputs: Record<string, Run> };
+export type LogEvent = { time: string; actor: string; action: string; target?: string; details?: Record<string, unknown> } | { damaged: string };
+export type Links = { links: { link: string; path: string | null }[]; backlinks: { path: string; title: string; context: string }[]; history: LogEvent[] };
+export type Session = { id: string; runtime: string; backend: string; state: string; uptime_s?: number; idle_s?: number; stats: { cpu_percent: number; memory_bytes: number } | null; running: { note: string; since?: string }[] };
+export type Peek = { sessions: Session[]; runtimes: { name: string; version: string }[] };
+
+async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
+  const r = await fetch(url, { method, headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({ error: r.statusText }));
+  if (!r.ok) throw new Error(j.error ?? r.statusText);
+  return j as T;
+}
+const q = (p: string) => encodeURIComponent(p);
+
+export const api = {
+  vault: () => call<{ name: string; root: string; author: string }>("GET", "/api/vault"),
+  tree: () => call<Entry[]>("GET", "/api/tree"),
+  index: () => call<Item[]>("GET", "/api/index"),
+  note: (p: string) => call<NoteData>("GET", `/api/note?path=${q(p)}`),
+  text: (p: string) => fetch(`/api/raw?path=${q(p)}`).then((r) => r.text()),
+  save: (p: string, text: string) => call("PUT", `/api/note?path=${q(p)}`, { text }),
+  create: (dir: string, title: string, kind = "note") => call<{ path: string }>("POST", "/api/note", { dir, title, kind }),
+  folder: (p: string) => call("POST", "/api/folder", { path: p }),
+  move: (from: string, to: string) => call("POST", "/api/move", { from, to }),
+  trash: (p: string) => call("POST", "/api/trash", { path: p }),
+  seal: (p: string) => call("POST", "/api/seal", { path: p }),
+  reveal: (p: string) => call("POST", "/api/reveal", { path: p }),
+  links: (p: string) => call<Links>("GET", `/api/links?path=${q(p)}`),
+  log: () => call<LogEvent[]>("GET", "/api/log?limit=300"),
+  run: (p: string, hash: string) => call<Run>("POST", "/api/run", { path: p, hash }),
+  interrupt: (lang: Lang) => call("POST", "/api/interrupt", { lang }),
+  restart: (lang: Lang) => call("POST", "/api/restart", { lang }),
+  runtimes: () => call<Peek>("GET", "/api/runtimes"),
+  raw: (p: string) => `/api/raw?path=${q(p)}`,
+};
+
+/** Server-Sent Events: files, cells, runtimes, the log. Reconnects by itself (EventSource does). */
+export function listen(on: (e: any) => void): () => void {
+  const es = new EventSource("/events");
+  es.onmessage = (m) => { try { on(JSON.parse(m.data)); } catch { /* not ours */ } };
+  return () => es.close();
+}
