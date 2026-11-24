@@ -14,7 +14,7 @@ export type FileActions = {
   seal: (p: string) => void;
   copy: (text: string, what: string) => void;
   reveal: (p: string) => void;
-  trace: (p: string) => void;
+  graph: (p: string) => void;
   backlinks: (p: string) => void;
   backlinkCount: (p: string) => number;
   sealed: (p: string) => boolean;
@@ -42,7 +42,7 @@ export function fileMenu(e: FileEntry | undefined, a: FileActions): MenuEntry[] 
   if (!dir) items.push({ id: "link", label: `Copy link  [[${name}]]`, icon: "copy", run: () => a.copy(`[[${name}]]`, "Link") });
   items.push({ id: "path", label: "Copy path", icon: "copy", run: () => a.copy(e.path, "Path") });
   items.push({ id: "reveal", label: "Reveal in file manager", run: () => a.reveal(e.path) });
-  if (!dir) items.push("-", { id: "trace", label: "Show in trace", run: () => a.trace(e.path) }, { id: "back", label: `Backlinks  ${a.backlinkCount(e.path)}`, run: () => a.backlinks(e.path) });
+  if (!dir) items.push("-", { id: "graph", label: "Show in graph", run: () => a.graph(e.path) }, { id: "back", label: `Backlinks  ${a.backlinkCount(e.path)}`, run: () => a.backlinks(e.path) });
   items.push("-", { id: "trash", label: "Move to trash", shortcut: "Del", run: () => a.trash(e.path) });
   return items;
 }

@@ -1,4 +1,4 @@
-// Malachite's page (agent-docs/rebrand/apps/malachite): the bar, the rail (Notes, Views, Trace, Log; the
+// Malachite's page (agent-docs/rebrand/apps/malachite): the bar, the rail (Notes, Views, Graph, Log; the
 // foot Search, Settings, Help), and on Notes the hub's files, the note and its Links as cards that hide to
 // slim bars. The parts are the kit's (@paperboatlab/ui): the file tree, the editor and its languages, the
 // plot, the canvas layout; Malachite brings the hub, its notes and cells. Files are the record.
@@ -15,9 +15,9 @@ import { fileMenu, type FileActions } from "./fileMenu.ts";
 import { FileGlyph, IMAGE, OWNER, TEXT, typeOf } from "./files.tsx";
 import { ReadView, type CodeLook } from "./Note.tsx";
 import { Ev, LinksCard, RuntimesKey } from "./Side.tsx";
-import { TraceGraph, hubLinks } from "./Trace.tsx";
+import { HubGraph, hubLinks } from "./Graph.tsx";
 
-type Page = "notes" | "views" | "trace" | "log";
+type Page = "notes" | "views" | "graph" | "log";
 type Ask = { title: string; label?: string; value?: string; danger?: boolean; ok: string; run: (v: string) => void };
 const isTheme = (v: unknown): v is Theme => v === "light" || v === "dark" || v === "system";
 const isBool = (v: unknown): v is boolean => typeof v === "boolean";
@@ -53,8 +53,6 @@ export function App() {
   const [running, setRunning] = useState<Record<string, boolean>>({});
   const [peekVersion, setPeekVersion] = useState(0);
   const [log, setLog] = useState<LogEvent[]>([]);
-  const [traceFrom, setTraceFrom] = useState<string | null>(null);
-  const [depth, setDepth] = useState<"1" | "2" | "3">("2");
   const [search, setSearch] = useState(false);
   const [ask, setAsk] = useState<Ask | null>(null);
   const { toasts, show, dismiss } = useToasts();
@@ -121,7 +119,7 @@ export function App() {
   useEffect(() => {
     const u = new URLSearchParams(location.search), p = u.get("open");
     if (p) open(p, false, u.get("mode") === "edit" ? "edit" : "read");
-    if (u.get("page") === "trace") setPage("trace");
+    if (u.get("page") === "graph") setPage("graph");
   }, [open]);
 
   const resolve = useMemo(() => {
@@ -164,7 +162,7 @@ export function App() {
     }),
     copy: (text, what) => navigator.clipboard.writeText(text).then(() => show({ title: `${what} copied`, detail: text, state: "done" }), fail),
     reveal: (p) => { api.reveal(p).catch(fail); },
-    trace: (p) => { setTraceFrom(p); setPage("trace"); },
+    graph: (p) => { open(p); setPage("graph"); },
     backlinks: (p) => { open(p); setHideR(false); },
     backlinkCount: (p) => allLinks.filter((l) => l.to === p).length,
     sealed: (p) => !!items.find((i) => i.path === p)?.props.sealed,
@@ -203,18 +201,17 @@ export function App() {
     ...[...new Set(items.flatMap((i) => i.tags))].sort().map((t): SearchItem => ({ id: `t:${t}`, label: `#${t}`, detail: `${items.filter((i) => i.tags.includes(t)).length} notes`, group: "Tags", scope: "Notes", icon: "tag", run: () => setPage("views") })),
     { id: "c:new", label: "New note", shortcut: "Ctrl N", group: "Commands", scope: "Commands", icon: "new-file", run: () => newNote() },
     { id: "c:seal", label: "Seal this note…", group: "Commands", scope: "Commands", icon: "lock", disabled: !note || note.sealed, why: note?.sealed ? "It is sealed" : "Open a note first", run: () => note && actions.seal(note.path) },
-    { id: "c:trace", label: "Trace this note", group: "Commands", scope: "Commands", icon: "a-trace", disabled: !note, why: "Open a note first", run: () => note && actions.trace(note.path) },
+    { id: "c:graph", label: "Show in graph", group: "Commands", scope: "Commands", icon: "a-trace", disabled: !note, why: "Open a note first", run: () => note && actions.graph(note.path) },
     { id: "c:jl", label: "Restart the Julia session", group: "Commands", scope: "Commands", icon: "debug-restart", run: () => { api.restart("julia").catch(fail); } },
     { id: "c:py", label: "Restart the Python session", group: "Commands", scope: "Commands", icon: "debug-restart", run: () => { api.restart("python").catch(fail); } },
     { id: "c:edit", label: mode === "edit" ? "Read this note" : "Edit this note", group: "Commands", scope: "Commands", icon: "command", disabled: !note, why: "Open a note first", run: () => setMode((m) => (m === "edit" ? "read" : "edit")) },
-    ...(["notes", "views", "trace", "log"] as Page[]).map((p, i): SearchItem => ({ id: `g:${p}`, label: `Go to ${p[0].toUpperCase()}${p.slice(1)}`, shortcut: `Alt ${i + 1}`, group: "Commands", scope: "Commands", icon: "go", run: () => setPage(p) })),
+    ...(["notes", "views", "graph", "log"] as Page[]).map((p, i): SearchItem => ({ id: `g:${p}`, label: `Go to ${p[0].toUpperCase()}${p.slice(1)}`, shortcut: `Alt ${i + 1}`, group: "Commands", scope: "Commands", icon: "go", run: () => setPage(p) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [items, note, mode, open, newNote, fail]);
 
   const t = current ? typeOf(current) : "";
   const nRunning = Object.values(running).filter(Boolean).length;
   const mdCount = items.filter((i) => i.type === "md").length;
-  const tracing = traceFrom ?? (current && t === "md" ? current : null);
 
   return (
     <div className="win">
@@ -234,7 +231,7 @@ export function App() {
 
       <Rail label="Malachite pages" wide={wide} onWide={setWide} page={page} onPage={(p) => setPage(p as Page)}
         pages={[{ id: "notes", label: "Notes", icon: "a-notes", keys: "Alt+1", count: nRunning ? "live" : mdCount }, { id: "views", label: "Views", icon: "a-views", keys: "Alt+2" },
-          { id: "trace", label: "Trace", icon: "a-trace", keys: "Alt+3" }, { id: "log", label: "Log", icon: "a-log", keys: "Alt+4" }]}
+          { id: "graph", label: "Graph", icon: "a-trace", keys: "Alt+3" }, { id: "log", label: "Log", icon: "a-log", keys: "Alt+4" }]}
         foot={[{ id: "search", label: "Search", icon: "search", keys: "Ctrl+K" }, { id: "settings", label: "Settings", icon: "a-settings" }, { id: "help", label: "Help", icon: "question", keys: "F1" }]}
         onFoot={(id) => { if (id === "search") setSearch(true); else show({ title: id === "settings" ? "Settings" : "Help", detail: "Not in v0.1: the hub's settings are hub.toml; the guide is the README.", state: "done" }); }} />
 
@@ -286,16 +283,13 @@ export function App() {
 
             <Panel name="Links" side="right" hidden={hideR} onHidden={setHideR} icon="references" width={300}>
               <LinksCard links={links} onOpen={open} onCreate={(n) => onLink(n, true)}
-                graph={current && t === "md" ? <TraceGraph from={current} links={allLinks} items={items} depth={1} small onOpen={open} /> : undefined} />
+                graph={current && t === "md" ? <HubGraph focus={current} links={allLinks} items={items} local onOpen={open} /> : undefined} />
             </Panel>
           </div>
         )}
-        {page === "trace" && (
-          <Panel name={tracing ? `Trace · ${nameOf(tracing).replace(/\.md$/, "")}` : "Trace"} count="what it came from and what came of it"
-            head={tracing ? <span className="tools"><Segmented label="Depth" value={depth} onChange={setDepth} options={[{ value: "1", label: "1" }, { value: "2", label: "2" }, { value: "3", label: "3" }]} />
-              <Key size="sm" icon="go" onClick={() => open(tracing)}>Open</Key></span> : undefined}>
-            {tracing ? <TraceGraph from={tracing} links={allLinks} items={items} depth={Number(depth)} onOpen={setTraceFrom} />
-              : <div className="empty"><p>Open a note, then trace it (Ctrl K › Trace this note, or the file menu).</p></div>}
+        {page === "graph" && (
+          <Panel name="Graph" count={`${mdCount} notes · ${allLinks.length} links`}>
+            <HubGraph focus={current} links={allLinks} items={items} onOpen={(p) => { open(p); setPage("notes"); }} />
           </Panel>
         )}
         {page === "log" && (

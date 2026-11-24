@@ -43,7 +43,7 @@ flowchart LR
 - `server/main.ts`: the HTTP server: the page from `dist/`, the JSON API, Server-Sent Events.
 - `client/`: `App.tsx` (the shell: bar, rail, cards, tabs, search, dialogs; files that aren't notes, a CSV
   plotted), `Note.tsx` (properties, the Read view, cells and outputs), `fileMenu.ts` (the brand file menu
-  for the kit's tree), `Trace.tsx` (the lineage and the local graph), `Side.tsx` (the Links card, the
+  for the kit's tree), `Graph.tsx` (the hub graph and the local graph, the kit's note graph), `Side.tsx` (the Links card, the
   runtimes key and its peek), `markdown.ts` (marked with wikilinks and embeds), `files.tsx`, `api.ts`.
 - **From the kit** (`@paperboatlab/ui`): the shell's parts (Rail, Panel, PanelsKey, Search, Menu, Dialog,
   ThemePicker, Toasts), the file tree (`/files`), the editor with its languages and themes (`/editor`:

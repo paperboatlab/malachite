@@ -9,7 +9,7 @@ export function LinksCard({ links, graph, onOpen, onCreate }: { links: Links | n
   if (!links) return <div className="sh muted">No note open.</div>;
   return (
     <>
-      {graph && <><div className="sh"><b>Local graph</b><code>depth 1</code></div><div className="lgraph">{graph}</div></>}
+      {graph && <><div className="sh"><b>Local graph</b></div><div className="lgraph">{graph}</div></>}
       <div className="sh"><b>Backlinks</b><code>{links.backlinks.length}</code></div>
       {links.backlinks.length === 0 && <p className="none">Nothing links here yet.</p>}
       {links.backlinks.map((b) => (
