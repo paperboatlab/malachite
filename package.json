@@ -23,7 +23,7 @@
     "test": "node --test test/*.test.ts"
   },
   "devDependencies": {
-    "@paperboatlab/ui": "github:paperboatlab/paperboat-ui#a88a1b9e8e77211c84f949870114dc60a33ac33a",
+    "@paperboatlab/ui": "github:paperboatlab/paperboat-ui#21415386be062aa4d508e485541e3a41475db1fd",
     "@types/node": "^22.19.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
