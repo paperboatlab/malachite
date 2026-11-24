@@ -1,0 +1,37 @@
+{
+  "name": "malachite",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Paperboat Malachite: an engineering notebook",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/paperboatlab/malachite.git"
+  },
+  "type": "module",
+  "bin": {
+    "malachite": "bin/malachite"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "node scripts/build.ts",
+    "dev": "node scripts/build.ts --watch",
+    "start": "node server/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts"
+  },
+  "devDependencies": {
+    "@paperboatlab/ui": "github:paperboatlab/paperboat-ui#de2ba2a4422337e09d6e3cb1d442140a40f722f7",
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@xyflow/react": "^12.12.1",
+    "esbuild": "^0.25.0",
+    "marked": "^16.4.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "^7.0.2"
+  }
+}
