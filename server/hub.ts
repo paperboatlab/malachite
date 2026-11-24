@@ -89,6 +89,7 @@ export class Hub {
     const abs = this.resolve(rel), { props, body } = split(fs.readFileSync(abs, "utf8"));
     if (props.sealed) throw new HubError(`${rel} is sealed`, 409);
     const from = props[key] ?? "";
+    if (String(from) === value) return;   // a card dropped where it was
     if (value) props[key] = value; else delete props[key];
     this.put(abs, join(props, body));
     this.log("note.property", rel, { key, from, to: value });

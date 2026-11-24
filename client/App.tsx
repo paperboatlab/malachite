@@ -6,7 +6,8 @@ import {
   AppMark, Dialog, Key, Panel, PanelsKey, Rail, Search, Segmented, ThemePicker, Toasts, chordMatches, readStored, typing, useTheme, useToasts, writeStored,
   type SearchItem, type Theme,
 } from "@paperboatlab/ui";
-import { DEFAULT_EDITOR_SETTINGS, Editor, languageFor, markdown, type Session } from "@paperboatlab/ui/editor";
+import { DEFAULT_EDITOR_SETTINGS, Editor, languageFor, livePreview, markdown, type Session } from "@paperboatlab/ui/editor";
+import type { EditorView } from "@codemirror/view";
 import { FileTree, type FileEntry } from "@paperboatlab/ui/files";
 import { Plot2D, type PlotSeries } from "@paperboatlab/ui/plot";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -19,6 +20,24 @@ import { HubGraph, hubLinks } from "./Graph.tsx";
 import { ViewsPage } from "./Views.tsx";
 
 type Page = "notes" | "views" | "graph" | "log";
+type Mode = "read" | "live" | "edit";
+
+/** The fenced cell whose opening fence is on `line` (1-based) of a note's text, as the server reads cells. */
+function cellAt(text: string, line: number): { lang: Lang; code: string } | null {
+  const lines = text.split("\n"), open = /^(`{3,}|~{3,})\s*([\w+-]*)/.exec(lines[line - 1] ?? "");
+  const lang = ({ julia: "julia", jl: "julia", python: "python", py: "python" } as Record<string, Lang>)[open?.[2].toLowerCase() ?? ""];
+  if (!open || !lang) return null;
+  let j = line;
+  while (j < lines.length && !(/^(`{3,}|~{3,})\s*$/.test(lines[j]) && lines[j][0] === open[1][0])) j++;
+  return { lang, code: lines.slice(line, j).join("\n") };
+}
+/** server/note.ts cellHash, in the page. */
+async function hashOf(lang: Lang, code: string) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${lang}\n${code}`));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+}
+/** a/b/../c → a/c */
+const normalise = (p: string) => p.split("/").reduce<string[]>((o, s) => (s === ".." ? o.slice(0, -1) : s && s !== "." ? [...o, s] : o), []).join("/");
 type Ask = { title: string; label?: string; value?: string; danger?: boolean; ok: string; run: (v: string) => void };
 const isTheme = (v: unknown): v is Theme => v === "light" || v === "dark" || v === "system";
 const isBool = (v: unknown): v is boolean => typeof v === "boolean";
@@ -47,7 +66,7 @@ export function App() {
   const [current, setCurrent] = useState<string | null>(() => readStored("malachite.tabs", isList)?.[0] ?? null);
   const [note, setNote] = useState<NoteData | null>(null);
   const [plain, setPlain] = useState<string | null>(null);   // a text file that isn't a note
-  const [mode, setMode] = useState<"read" | "edit">("read");
+  const [mode, setMode] = useState<Mode>("read");
   const [draft, setDraft] = useState<string | null>(null);
   const [links, setLinks] = useState<Links | null>(null);
   const [runs, setRuns] = useState<Record<string, Run>>({});
@@ -105,7 +124,7 @@ export function App() {
   useEffect(() => { if (page === "log") api.log().then(setLog, fail); }, [page, fail]);
 
   /** Opens a file in a tab (to the side: behind the current one); a note opens in Read unless asked. */
-  const open = useCallback((p: string, side = false, view: "read" | "edit" = "read") => {
+  const open = useCallback((p: string, side = false, view: Mode = "read") => {
     setPage("notes");
     if (!side) setMode(view);
     setTabs((t) => (t.includes(p) ? t : side ? [...t, p] : [p, ...t].slice(0, 12)));
@@ -119,7 +138,8 @@ export function App() {
   // a deep link opens a file: /?open=<path in the hub>&mode=edit (the Launcher and other apps use it)
   useEffect(() => {
     const u = new URLSearchParams(location.search), p = u.get("open");
-    if (p) open(p, false, u.get("mode") === "edit" ? "edit" : "read");
+    const m = u.get("mode");
+    if (p) open(p, false, m === "edit" || m === "live" ? m : "read");
     const pg = u.get("page"); if (pg === "graph" || pg === "views" || pg === "log") setPage(pg);
   }, [open]);
 
@@ -183,6 +203,24 @@ export function App() {
     if (!missing) return open(target);
     setAsk({ title: `Create ${target}?`, label: "Title", value: target, ok: "Create", run: (t) => api.create(current ? dirOf(current) : "", t).then((r) => { reload(); open(r.path); }, fail) });
   };
+
+  // Live: the editor with the kit's live preview; its links open like Read's, its Run key saves, then runs
+  const liveView = useRef<EditorView | null>(null);
+  const liveAct = useRef({ link: (_t: string, _w: boolean) => {}, run: (_l: number) => {} });
+  liveAct.current = {
+    link: (t, wiki) => {
+      if (/^[a-z]+:/i.test(t)) { window.open(t, "_blank", "noopener"); return; }
+      const p = wiki ? resolve(t) : resolve(normalise(current ? `${dirOf(current)}/${t}` : t));
+      onLink(p ?? t, !p);
+    },
+    run: async (line) => {
+      const v = liveView.current, cell = v && cellAt(v.state.doc.toString(), line);
+      if (!cell || !current) return;
+      if (draft !== null) await save(current, v.state.doc.toString());
+      runCell({ ...cell, hash: await hashOf(cell.lang, cell.code), line });
+    },
+  };
+  const live = useMemo(() => livePreview({ onLink: (t, w) => liveAct.current.link(t, w), run: { langs: ["julia", "jl", "python", "py"], onRun: (l) => liveAct.current.run(l) } }), []);
 
   // keys: Ctrl K search, Ctrl B / Ctrl Alt B the side cards, Alt 1–4 the pages (the Rail), Ctrl N a note
   useEffect(() => {
@@ -272,14 +310,15 @@ export function App() {
               <div className="body">
                 {!current && <div className="empty"><AppMark app="malachite" size={72} idle label="" /><p>Open a note from the hub, or make one.</p><Key kind="primary" icon="new-file" onClick={() => newNote("")}>New note</Key></div>}
                 {note && mode === "read" && <ReadView note={note} runs={runs} resolve={resolve} look={look} onLink={onLink} onRun={runCell} onStop={stopCell} />}
-                {note && mode === "edit" && (
-                  <div className="edit"><Editor key={`${note.path}:${note.sealed}`} value={draft ?? note.text} language={markdown} settings={look.settings} appTheme={look.appTheme}
-                    readOnly={note.sealed} ariaLabel={`${note.title}, Markdown`} onChange={setDraft} keys={saveKeys} /></div>
+                {note && mode !== "read" && (
+                  <div className={`edit ${mode}`}><Editor key={`${note.path}:${note.sealed}:${mode}`} value={draft ?? note.text} language={markdown} settings={look.settings} appTheme={look.appTheme}
+                    readOnly={note.sealed} ariaLabel={`${note.title}, Markdown`} onChange={setDraft} keys={saveKeys}
+                    extra={mode === "live" ? live : undefined} onView={(v) => { liveView.current = v; }} /></div>
                 )}
                 {current && t !== "md" && <FileView path={current} text={plain} look={look} keys={saveKeys} onChange={setDraft} />}
               </div>
               {note && <div className="efoot"><span>markdown · {note.body.split(/\s+/).filter(Boolean).length} words · {note.cells.length} cells</span>
-                <Segmented label="View" value={mode} onChange={setMode} options={[{ value: "read", label: "Read" }, { value: "edit", label: "Edit" }]} /><span>{links?.backlinks.length ?? 0} backlinks · {links?.links.length ?? 0} links</span></div>}
+                <Segmented label="View" value={mode} onChange={setMode} options={[{ value: "read", label: "Read" }, { value: "live", label: "Live" }, { value: "edit", label: "Edit" }]} /><span>{links?.backlinks.length ?? 0} backlinks · {links?.links.length ?? 0} links</span></div>}
             </section>
 
             <Panel name="Links" side="right" hidden={hideR} onHidden={setHideR} icon="references" width={300}>

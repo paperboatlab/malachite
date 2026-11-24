@@ -134,6 +134,12 @@ a.wl.miss, .wl.miss { color: var(--text-muted); text-decoration-style: dashed; }
 /* the kit's editor filling the note card, or under a file's card */
 .note .edit { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .note .edit .pb-editor { flex: 1; }
+/* Live reads like Read: no gutter, the note's column and type, links in the deeper malachite */
+.note .edit.live { --link-live: var(--file-malachite); }
+.note .edit.live .cm-gutters { display: none; }
+.note .edit.live .cm-scroller { font-family: var(--font-sans) !important; font-size: 14.5px !important; line-height: 1.65 !important; }
+.note .edit.live .cm-content { max-width: 720px; margin: 0 auto; padding: 28px 40px 80px; }
+.note .edit.live .cm-activeLine { background: transparent; }
 .fedit { flex: 1; min-height: 320px; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; }
 .fedit .pb-editor { flex: 1; }
 .fileview { flex: 1; min-height: 0; }
