@@ -99,8 +99,7 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
         case "GET /api/log": return send(res, 200, hub.events(Number(url.searchParams.get("limit") ?? 200)));
         case "GET /api/raw": {
           const abs = hub.resolve(q("path"));
-          res.writeHead(200, { "content-type": TYPES[path.extname(abs).toLowerCase()] ?? "application/octet-stream", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:", "x-content-type-options": "nosniff" });
-          return fs.createReadStream(abs).pipe(res);
+          return stream(res, abs, { "content-type": TYPES[path.extname(abs).toLowerCase()] ?? "application/octet-stream", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:", "x-content-type-options": "nosniff" });
         }
         case "POST /api/run": return send(res, 200, sessions.run(String(body.path), String(body.hash)));
         case "POST /api/interrupt": return send(res, 200, await sessions.interrupt(lang(body.lang)));
@@ -144,8 +143,14 @@ function file(res: http.ServerResponse, p: string) {
   const rel = p === "/" ? "index.html" : decodeURIComponent(p).replace(/^\/+/, "");
   const abs = path.resolve(DIST, rel);
   if (!abs.startsWith(DIST + path.sep) || !fs.existsSync(abs) || !fs.statSync(abs).isFile()) return send(res, 404, { error: "not found" });
-  res.writeHead(200, { "content-type": TYPES[path.extname(abs)] ?? "application/octet-stream" });
-  fs.createReadStream(abs).pipe(res);
+  stream(res, abs, { "content-type": TYPES[path.extname(abs)] ?? "application/octet-stream" });
+}
+
+/** A file to the response. One that is gone (moved, deleted, mid-checkout) is a 404, never a crash. */
+function stream(res: http.ServerResponse, abs: string, headers: http.OutgoingHttpHeaders) {
+  const s = fs.createReadStream(abs);
+  s.once("open", () => { res.writeHead(200, headers); s.pipe(res); });
+  s.once("error", () => { if (!res.headersSent) send(res, 404, { error: "not found" }); else res.destroy(); });
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1])) {

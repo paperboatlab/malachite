@@ -81,3 +81,16 @@ test("the index resolves links and finds backlinks with their context", () => {
   assert.equal(ix.context("tank/report.md", "tank/notes/step.md"), "Cites [[step]] here.");
   assert.equal(ix.items.get("tank/level-loop.pst")?.type, "pst");
 });
+
+test("the server answers a missing file with 404 and stays up", async () => {
+  const { serve } = await import("../server/main.ts");
+  const { Control } = await import("../server/control.ts");
+  const dir = tmp();
+  const { server } = serve(dir, 0, new Control(path.join(dir, "none.sock"), false));
+  await new Promise((r) => server.once("listening", r));
+  const port = (server.address() as import("node:net").AddressInfo).port;
+  const get = (p: string) => fetch(`http://127.0.0.1:${port}${p}`).then((r) => r.status);
+  assert.equal(await get("/api/raw?path=gone.csv"), 404);
+  assert.equal(await get("/api/hub"), 200);
+  server.close();
+});
