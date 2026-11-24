@@ -16,6 +16,7 @@ import { FileGlyph, IMAGE, OWNER, TEXT, typeOf } from "./files.tsx";
 import { ReadView, type CodeLook } from "./Note.tsx";
 import { Ev, LinksCard, RuntimesKey } from "./Side.tsx";
 import { HubGraph, hubLinks } from "./Graph.tsx";
+import { ViewsPage } from "./Views.tsx";
 
 type Page = "notes" | "views" | "graph" | "log";
 type Ask = { title: string; label?: string; value?: string; danger?: boolean; ok: string; run: (v: string) => void };
@@ -119,7 +120,7 @@ export function App() {
   useEffect(() => {
     const u = new URLSearchParams(location.search), p = u.get("open");
     if (p) open(p, false, u.get("mode") === "edit" ? "edit" : "read");
-    if (u.get("page") === "graph") setPage("graph");
+    const pg = u.get("page"); if (pg === "graph" || pg === "views" || pg === "log") setPage(pg);
   }, [open]);
 
   const resolve = useMemo(() => {
@@ -298,9 +299,8 @@ export function App() {
           </Panel>
         )}
         {page === "views" && (
-          <Panel name="Views">
-            <div className="empty"><p>Board, list and timeline of the hub's notes, by their properties: next.</p></div>
-          </Panel>
+          <ViewsPage items={items} onOpen={(p) => open(p)} fail={fail}
+            ask={(title, value, ok, run) => setAsk({ title, label: "Name", value, ok, run: (n) => n.trim() && run(n.trim()) })} />
         )}
       </main>
 

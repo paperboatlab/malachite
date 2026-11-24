@@ -5,6 +5,7 @@ author: lab
 project: tank-level
 kind: experiment
 status: in progress
+due: 2026-11-28
 tags: [tank, step, level-sensor]
 ---
 
