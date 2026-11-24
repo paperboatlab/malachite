@@ -282,7 +282,7 @@ export function App() {
             </section>
 
             <Panel name="Links" side="right" hidden={hideR} onHidden={setHideR} icon="references" width={300}>
-              <LinksCard links={links} onOpen={open} onCreate={(n) => onLink(n, true)}
+              <LinksCard links={links} self={current ?? ""} onOpen={open} onCreate={(n) => onLink(n, true)}
                 graph={current && t === "md" ? <HubGraph focus={current} links={allLinks} items={items} local onOpen={open} /> : undefined} />
             </Panel>
           </div>

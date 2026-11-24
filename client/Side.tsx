@@ -5,7 +5,18 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type LogEvent, type Lang, type Links, type Peek } from "./api.ts";
 import { FileGlyph } from "./files.tsx";
 
-export function LinksCard({ links, graph, onOpen, onCreate }: { links: Links | null; graph?: ReactNode; onOpen: (p: string) => void; onCreate: (name: string) => void }) {
+/** A backlink's line, its wikilinks shown as their text, the ones naming this note highlighted. */
+function Context({ text, self }: { text: string; self: string }) {
+  const me = self.slice(self.lastIndexOf("/") + 1).replace(/\.md$/i, "").toLowerCase();
+  return <p>{text.split(/(\[\[[^\]]+\]\])/).map((part, i) => {
+    const m = /^\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]+))?\]\]$/.exec(part);
+    if (!m) return part;
+    const target = m[1].slice(m[1].lastIndexOf("/") + 1).replace(/\.md$/i, "").trim().toLowerCase();
+    return target === me ? <mark key={i} className="me">{m[2] ?? m[1]}</mark> : <b key={i}>{m[2] ?? m[1]}</b>;
+  })}</p>;
+}
+
+export function LinksCard({ links, self, graph, onOpen, onCreate }: { links: Links | null; self: string; graph?: ReactNode; onOpen: (p: string) => void; onCreate: (name: string) => void }) {
   if (!links) return <div className="sh muted">No note open.</div>;
   return (
     <>
@@ -15,7 +26,7 @@ export function LinksCard({ links, graph, onOpen, onCreate }: { links: Links | n
       {links.backlinks.map((b) => (
         <button key={b.path} type="button" className="bl" onClick={() => onOpen(b.path)}>
           <div><FileGlyph path={b.path} />{b.title}</div>
-          {b.context && <p>{b.context}</p>}
+          {b.context && <Context text={b.context} self={self} />}
         </button>
       ))}
       <div className="sh hr"><b>Links</b><code>{links.links.length}</code></div>
