@@ -1,5 +1,5 @@
-// Cells run in sessions: one session lease per language for the vault (paperboat-runtime/0 session mode:
-// a live namespace shared by the vault's notes, as a Jupyter kernel is). Malachite runs no code itself
+// Cells run in sessions: one session lease per language for the docs (paperboat-runtime/0 session mode:
+// a live namespace shared by every note in the docs, as a Jupyter kernel is). Malachite runs no code itself
 // (pb#415 §9): it asks paperboatd for the lease and speaks the protocol. Outputs are kept beside the
 // note in `.malachite/out/<note id>/<cell hash>.json` (decision 16), with the runtime that made them.
 import fs from "node:fs";
@@ -7,7 +7,7 @@ import path from "node:path";
 import { Control, type Lease } from "./control.ts";
 import { parse, type Lang } from "./note.ts";
 import { Runtime, RuntimeError } from "./runtime.ts";
-import type { Vault } from "./vault.ts";
+import type { Docs } from "./docs.ts";
 
 export type Output =
   | { type: "stream"; name: string; text: string }
@@ -35,12 +35,12 @@ export class Sessions {
   private queues = new Map<Lang, Promise<unknown>>();
   readonly running = new Map<Lang, Run>();
 
-  private vault: Vault;
+  private docs: Docs;
   private control: Control;
   private emit: (e: Record<string, unknown>) => void;
 
-  constructor(vault: Vault, control: Control, emit: (e: Record<string, unknown>) => void) {
-    this.vault = vault;
+  constructor(docs: Docs, control: Control, emit: (e: Record<string, unknown>) => void) {
+    this.docs = docs;
     this.control = control;
     this.emit = emit;
     control.onEvent = (e) => {
@@ -56,7 +56,7 @@ export class Sessions {
     let p = this.sessions.get(lang);
     if (!p) {
       p = (async () => {
-        const lease = await this.control.call<Lease>("acquire", { runtime: lang, mode: "session", project: this.vault.root, owner: `malachite:${this.vault.name}` });
+        const lease = await this.control.call<Lease>("acquire", { runtime: lang, mode: "session", project: this.docs.root, owner: `malachite:${this.docs.name}` });
         if (lease.state === "failed") throw new Error(lease.error ?? `${lang} failed to start`);
         const rt = await Runtime.connect(path.join(lease.ipc, "runtime.sock"), 120_000);
         rt.onClose = () => this.drop(lang);
@@ -76,7 +76,7 @@ export class Sessions {
     this.emit({ type: "session", lang, state: "stopped" });
   }
 
-  outDir(noteId: string) { return path.join(this.vault.root, ".malachite", "out", safe(noteId)); }
+  outDir(noteId: string) { return path.join(this.docs.root, ".malachite", "out", safe(noteId)); }
 
   /** The saved outputs of a note's cells, by cell hash. */
   outputs(noteId: string): Record<string, Run> {
@@ -92,7 +92,7 @@ export class Sessions {
 
   /** Runs the cell of `note` whose hash is `hash`; cells of one language run in order. */
   run(rel: string, hash: string): Run {
-    const n = parse(this.vault.read(rel), path.basename(rel, ".md"));
+    const n = parse(this.docs.read(rel), path.basename(rel, ".md"));
     const cell = n.cells.find((c) => c.hash === hash);
     if (!cell) throw new Error("that cell changed or is gone: run it again");
     const noteId = typeof n.props.id === "string" ? n.props.id : rel;
@@ -129,7 +129,7 @@ export class Sessions {
       this.running.delete(cell.lang);
       fs.mkdirSync(this.outDir(noteId), { recursive: true });
       fs.writeFileSync(path.join(this.outDir(noteId), `${hash}.json`), JSON.stringify(run));
-      this.vault.log("cell.ran", rel, { lang: cell.lang, hash, ok: run.state === "done", ms: run.ms });
+      this.docs.log("cell.ran", rel, { lang: cell.lang, hash, ok: run.state === "done", ms: run.ms });
       send();
     });
     this.queues.set(cell.lang, next.catch(() => {}));
@@ -153,10 +153,10 @@ export class Sessions {
   /** A fresh session: the namespace is lost; the next cell starts a new one. */
   restart(lang: Lang) { this.drop(lang); return {}; }
 
-  /** The runtimes key's peek: this vault's sessions with their stats, and what could start. */
+  /** The runtimes key's peek: the sessions of these docs with their stats, and what could start. */
   async peek() {
     const leases = await this.control.call<Lease[]>("ps");
-    const mine = leases.filter((l) => l.owner === `malachite:${this.vault.name}` && l.project === this.vault.root);
+    const mine = leases.filter((l) => l.owner === `malachite:${this.docs.name}` && l.project === this.docs.root);
     const sessions = await Promise.all(mine.map(async (l) => ({
       ...l,
       stats: await this.control.call("stats", { lease: l.id }).then((r: any) => r.stats, () => null),

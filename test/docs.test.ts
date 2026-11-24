@@ -5,33 +5,33 @@ import path from "node:path";
 import { test } from "node:test";
 import { Index } from "../server/index.ts";
 import { split } from "../server/note.ts";
-import { Vault } from "../server/vault.ts";
+import { Docs } from "../server/docs.ts";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "malachite-"));
 
-test("opening a folder makes it a vault and logs it", () => {
+test("opening a folder makes it docs and logs it", () => {
   const dir = tmp();
-  const v = new Vault(dir);
-  assert.match(fs.readFileSync(path.join(dir, "vault.toml"), "utf8"), /schema = 1/);
-  assert.equal(v.events()[0] && "action" in v.events()[0] ? (v.events()[0] as any).action : "", "vault.created");
+  const v = new Docs(dir);
+  assert.match(fs.readFileSync(path.join(dir, "docs.toml"), "utf8"), /schema = 1/);
+  assert.equal(v.events()[0] && "action" in v.events()[0] ? (v.events()[0] as any).action : "", "docs.created");
 });
 
 test("a newer schema is refused with a clear message", () => {
   const dir = tmp();
-  fs.writeFileSync(path.join(dir, "vault.toml"), "schema = 99\n");
-  assert.throws(() => new Vault(dir), /schema 99.*Update Malachite/);
+  fs.writeFileSync(path.join(dir, "docs.toml"), "schema = 99\n");
+  assert.throws(() => new Docs(dir), /schema 99.*Update Malachite/);
 });
 
-test("paths stay inside the vault, symlinks included", () => {
+test("paths stay inside the docs, symlinks included", () => {
   const dir = tmp(), outside = tmp();
-  const v = new Vault(dir);
+  const v = new Docs(dir);
   fs.symlinkSync(outside, path.join(dir, "escape"));
-  for (const p of ["../x", "/../../etc/passwd", "a/../../x", "escape/file", "escape"]) assert.throws(() => v.resolve(p), /outside the vault/, p);
+  for (const p of ["../x", "/../../etc/passwd", "a/../../x", "escape/file", "escape"]) assert.throws(() => v.resolve(p), /outside the docs/, p);
   assert.equal(v.resolve("/notes/a.md"), path.join(fs.realpathSync(dir), "notes/a.md"));
 });
 
 test("create, write, move, seal, trash; every one a log line", () => {
-  const v = new Vault(tmp());
+  const v = new Docs(tmp());
   const p = v.create("notes", "Step response at 5 cm", "experiment");
   assert.equal(p, "notes/step-response-at-5-cm.md");
   assert.equal(v.create("notes", "Step response at 5 cm"), "notes/step-response-at-5-cm-2.md");
@@ -47,23 +47,23 @@ test("create, write, move, seal, trash; every one a log line", () => {
   v.trash("notes/step.md");
   assert.ok(!fs.existsSync(path.join(v.root, "notes/step.md")));
   const actions = v.events().map((e: any) => e.action);
-  assert.deepEqual(actions, ["file.trashed", "note.sealed", "file.moved", "note.updated", "note.created", "note.created", "vault.created"]);
+  assert.deepEqual(actions, ["file.trashed", "note.sealed", "file.moved", "note.updated", "note.created", "note.created", "docs.created"]);
 });
 
 test("a damaged log line is shown, not dropped", () => {
-  const v = new Vault(tmp());
+  const v = new Docs(tmp());
   fs.appendFileSync(path.join(v.root, "log", `${new Date().toISOString().slice(0, 7)}.jsonl`), "{oops\n");
   assert.ok("damaged" in v.events()[0]);
 });
 
 test("the tree hides the cache, git and dotfiles; folders first", () => {
-  const v = new Vault(tmp());
+  const v = new Docs(tmp());
   for (const f of [".malachite/out/x.json", ".git/HEAD", ".hidden", "b.md", "a/z.md"]) { fs.mkdirSync(path.dirname(path.join(v.root, f)), { recursive: true }); fs.writeFileSync(path.join(v.root, f), ""); }
-  assert.deepEqual(v.tree().map((e) => e.name), ["a", "log", "b.md", "vault.toml"]);
+  assert.deepEqual(v.tree().map((e) => e.name), ["a", "log", "b.md", "docs.toml"]);
 });
 
 test("the index resolves links and finds backlinks with their context", () => {
-  const v = new Vault(tmp());
+  const v = new Docs(tmp());
   const w = (p: string, t: string) => { fs.mkdirSync(path.dirname(path.join(v.root, p)), { recursive: true }); fs.writeFileSync(path.join(v.root, p), t); };
   w("tank/notes/step.md", "# Step\nUses [[protocol]] and ![[level-loop.pst]] and [[missing]].\n");
   w("tank/notes/protocol.md", "# Protocol\n");

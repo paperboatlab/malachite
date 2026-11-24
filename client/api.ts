@@ -24,7 +24,7 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
 const q = (p: string) => encodeURIComponent(p);
 
 export const api = {
-  vault: () => call<{ name: string; root: string; author: string }>("GET", "/api/vault"),
+  docs: () => call<{ name: string; root: string; author: string }>("GET", "/api/docs"),
   tree: () => call<Entry[]>("GET", "/api/tree"),
   index: () => call<Item[]>("GET", "/api/index"),
   note: (p: string) => call<NoteData>("GET", `/api/note?path=${q(p)}`),

@@ -9,7 +9,7 @@ import { test } from "node:test";
 import { Control } from "../server/control.ts";
 import { Runtime, RuntimeError } from "../server/runtime.ts";
 import { Sessions, type Run } from "../server/sessions.ts";
-import { Vault } from "../server/vault.ts";
+import { Docs } from "../server/docs.ts";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "malachite-"));
 const frame = (m: object) => { const b = Buffer.from(JSON.stringify(m)); const h = Buffer.alloc(4); h.writeUInt32LE(b.length); return Buffer.concat([h, b]); };
@@ -84,23 +84,23 @@ test("a cell runs in a session lease and its output is kept beside the note", as
   fs.mkdirSync(ipc);
   const rsrv = fakeRuntime(path.join(ipc, "runtime.sock"));
   const dsrv = fakeDaemon(path.join(dir, "control.sock"), ipc, calls);
-  const vault = new Vault(path.join(dir, "vault") + (fs.mkdirSync(path.join(dir, "vault")), ""));
-  const p = vault.create("", "Cells");
-  vault.write(p, vault.read(p) + "```python\nprint('hi'); 1+1\n```\n");
+  const docs = new Docs(path.join(dir, "docs") + (fs.mkdirSync(path.join(dir, "docs")), ""));
+  const p = docs.create("", "Cells");
+  docs.write(p, docs.read(p) + "```python\nprint('hi'); 1+1\n```\n");
   const events: any[] = [];
-  const s = new Sessions(vault, new Control(path.join(dir, "control.sock"), false), (e) => events.push(structuredClone(e)));   // as SSE sends them
-  const { hash } = (await import("../server/note.ts")).parse(vault.read(p)).cells[0];
+  const s = new Sessions(docs, new Control(path.join(dir, "control.sock"), false), (e) => events.push(structuredClone(e)));   // as SSE sends them
+  const { hash } = (await import("../server/note.ts")).parse(docs.read(p)).cells[0];
   const run = s.run(p, hash);
   while (run.state !== "done" && run.state !== "failed") await new Promise((r) => setTimeout(r, 10));
   assert.equal(run.state, "done");
   assert.deepEqual(run.outputs, [{ type: "stream", name: "stdout", text: "hi\n" }, { type: "display", data: { "text/plain": "<plot>", "image/png": "iVBOR" } }, { type: "result", data: { "text/plain": "2" } }]);
   assert.deepEqual(run.runtime, { name: "python", version: "3.12.16", backend: "podman", digest: "sha256:abc", verified: "unsigned" });
   assert.deepEqual(calls.slice(0, 2), ["subscribe", "acquire"]);
-  const id = (await import("../server/note.ts")).split(vault.read(p)).props.id as string;
+  const id = (await import("../server/note.ts")).split(docs.read(p)).props.id as string;
   const saved: Run = s.outputs(id)[hash];
   assert.equal(saved.state, "done");
   assert.ok(events.some((e) => e.type === "cell" && e.run.state === "running"));
-  assert.ok(vault.events().some((e: any) => e.action === "cell.ran" && e.details.ok === true));
+  assert.ok(docs.events().some((e: any) => e.action === "cell.ran" && e.details.ok === true));
   const peek = await s.peek();
   assert.equal(peek.sessions[0].stats.pids, 3);
   assert.deepEqual(peek.runtimes.map((r) => r.name), ["python"]);
@@ -111,20 +111,20 @@ test("a cell runs in a session lease and its output is kept beside the note", as
 
 test("a cell whose code changed is refused with a reason", () => {
   const dir = tmp();
-  const vault = new Vault(dir);
-  const p = vault.create("", "x");
-  const s = new Sessions(vault, new Control(path.join(dir, "none.sock"), false), () => {});
+  const docs = new Docs(dir);
+  const p = docs.create("", "x");
+  const s = new Sessions(docs, new Control(path.join(dir, "none.sock"), false), () => {});
   assert.throws(() => s.run(p, "0000"), /changed or is gone/);
 });
 
 test("without the daemon a cell fails and says why", async () => {
   const dir = tmp();
-  const vault = new Vault(dir);
-  const p = vault.create("", "x");
-  vault.write(p, vault.read(p) + "```julia\n1\n```\n");
-  const s = new Sessions(vault, new Control(path.join(dir, "none.sock"), false), () => {});
+  const docs = new Docs(dir);
+  const p = docs.create("", "x");
+  docs.write(p, docs.read(p) + "```julia\n1\n```\n");
+  const s = new Sessions(docs, new Control(path.join(dir, "none.sock"), false), () => {});
   const { parse } = await import("../server/note.ts");
-  const run = s.run(p, parse(vault.read(p)).cells[0].hash);
+  const run = s.run(p, parse(docs.read(p)).cells[0].hash);
   while (run.state !== "failed" && run.state !== "done") await new Promise((r) => setTimeout(r, 10));
   assert.match((run.outputs[0] as any).error.message, /paperboatd is not running/);
 });

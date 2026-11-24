@@ -1,4 +1,4 @@
-// The vault tree, and the file menu (REBRAND "File menu"): one right-click menu for files in every app,
+// The docs tree, and the file menu (REBRAND "File menu"): one right-click menu for files in every app,
 // the same groups in the same order; the owning app adds one group under its name; an item that can't
 // run stays, greyed, with why.
 import { Icon, Menu, type MenuEntry } from "@paperboatlab/ui";
@@ -74,7 +74,7 @@ export function Tree({ entries, current, open, onToggle, actions }: {
   };
   walk(entries, 0);
   return (
-    <div className="tree" role="tree" aria-label="Vault">
+    <div className="tree" role="tree" aria-label="Docs">
       {rows}
       {menu && (
         <div className="ctx" style={{ left: Math.min(menu.x, innerWidth - 290), top: Math.min(menu.y, innerHeight - 440) }}>

@@ -8,19 +8,19 @@ import { test } from "node:test";
 import { Control } from "../server/control.ts";
 import { parse } from "../server/note.ts";
 import { Sessions } from "../server/sessions.ts";
-import { Vault } from "../server/vault.ts";
+import { Docs } from "../server/docs.ts";
 
 const daemon = process.env.PAPERBOATD ?? (process.env.PATH ?? "").split(path.delimiter).map((d) => path.join(d, "paperboatd")).find((p) => fs.existsSync(p));
 
 test("a Python cell runs in a session lease, in its note's folder", { skip: !daemon && "no paperboatd", timeout: 300_000 }, async () => {
-  const vault = new Vault(fs.mkdtempSync(path.join(os.tmpdir(), "malachite-e2e-")));
-  fs.mkdirSync(path.join(vault.root, "notes"));
-  fs.writeFileSync(path.join(vault.root, "notes", "data.txt"), "42\n");
-  const p = vault.create("notes", "E2E");
-  vault.write(p, `${vault.read(p)}\`\`\`python\nimport os\nprint(open("data.txt").read().strip(), os.path.basename(os.getcwd()))\n6 * 7\n\`\`\`\n`);
-  const s = new Sessions(vault, new Control(), () => {});
+  const docs = new Docs(fs.mkdtempSync(path.join(os.tmpdir(), "malachite-e2e-")));
+  fs.mkdirSync(path.join(docs.root, "notes"));
+  fs.writeFileSync(path.join(docs.root, "notes", "data.txt"), "42\n");
+  const p = docs.create("notes", "E2E");
+  docs.write(p, `${docs.read(p)}\`\`\`python\nimport os\nprint(open("data.txt").read().strip(), os.path.basename(os.getcwd()))\n6 * 7\n\`\`\`\n`);
+  const s = new Sessions(docs, new Control(), () => {});
   try {
-    const run = s.run(p, parse(vault.read(p)).cells[0].hash);
+    const run = s.run(p, parse(docs.read(p)).cells[0].hash);
     while (run.state !== "done" && run.state !== "failed") await new Promise((r) => setTimeout(r, 50));
     assert.equal(run.state, "done", JSON.stringify(run.outputs));
     assert.deepEqual(run.outputs, [{ type: "stream", name: "stdout", text: "42 notes\n" }, { type: "result", data: { "text/plain": "42" } }]);

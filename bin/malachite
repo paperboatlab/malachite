@@ -1,4 +1,4 @@
 #!/bin/sh
-# Paperboat Malachite: `malachite <vault folder> [--port N]` (the app server; the page is dist/).
+# Paperboat Malachite: `malachite <docs folder> [--port N]` (the app server; the page is dist/).
 here=$(dirname "$(readlink -f "$0")")
 exec node "$here/../server/main.ts" "$@"

@@ -1,5 +1,5 @@
 // Malachite's page (agent-docs/rebrand/apps/malachite): the bar, the rail (Notes, Views, Trace, Log; the
-// foot Search, Settings, Help), and on Notes the vault tree, the note and its Links as cards that hide to
+// foot Search, Settings, Help), and on Notes the docs tree, the note and its Links as cards that hide to
 // slim bars. Everything it shows comes from the app server; files are the record.
 import {
   AppMark, Dialog, Key, Panel, Rail, Search, Segmented, ThemePicker, Toasts, chordMatches, readStored, typing, useTheme, useToasts, writeStored,
@@ -23,7 +23,7 @@ const dirOf = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) :
 export function App() {
   const [theme, setTheme] = useState<Theme>(() => readStored("paperboat.theme", isTheme) ?? "system");
   useTheme(theme);
-  const [vault, setVault] = useState<{ name: string; root: string } | null>(null);
+  const [docs, setDocs] = useState<{ name: string; root: string } | null>(null);
   const [tree, setTree] = useState<Entry[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [page, setPage] = useState<Page>("notes");
@@ -54,7 +54,7 @@ export function App() {
   useEffect(() => writeStored("malachite.tabs", current ? [current, ...tabs.filter((t) => t !== current)] : tabs), [tabs, current]);
 
   const reload = useCallback(() => { api.tree().then(setTree, fail); api.index().then(setItems, fail); }, [fail]);
-  useEffect(() => { api.vault().then((v) => { setVault(v); document.title = `${v.name} · Malachite`; }, fail); reload(); }, [reload, fail]);
+  useEffect(() => { api.docs().then((v) => { setDocs(v); document.title = `${v.name} · Malachite`; }, fail); reload(); }, [reload, fail]);
 
   const load = useCallback((p: string | null) => {
     if (!p) { setNote(null); setPlain(null); setLinks(null); return; }
@@ -91,7 +91,7 @@ export function App() {
     }
   }), [reload, load]);
   useEffect(() => { if (page === "log") api.log().then(setLog, fail); }, [page, fail]);
-  // a deep link opens a file: /?open=<path in the vault>&mode=edit (the Launcher and other apps use it)
+  // a deep link opens a file: /?open=<path in the docs>&mode=edit (the Launcher and other apps use it)
   useEffect(() => {
     const u = new URLSearchParams(location.search), p = u.get("open");
     if (p) open(p, false, u.get("mode") === "edit" ? "edit" : "read");
@@ -139,7 +139,7 @@ export function App() {
     open, newNote,
     newFolder: (dir) => setAsk({ title: "New folder", label: "Name", ok: "Create", run: (n) => api.folder(dir ? `${dir}/${n}` : n).then(() => { reload(); setExpanded((s) => new Set(s).add(dir)); }, fail) }),
     rename: (p) => setAsk({
-      title: "Rename", label: "Path in the vault", value: p, ok: "Rename",
+      title: "Rename", label: "Path in the docs", value: p, ok: "Rename",
       run: (to) => to !== p && api.move(p, to).then(() => { reload(); setTabs((t) => t.map((x) => (x === p ? to : x))); if (current === p) setCurrent(to); }, fail),
     }),
     trash: (p) => setAsk({ title: `Move ${p} to the trash?`, danger: true, ok: "Move to trash", run: () => api.trash(p).then(() => { reload(); close(p); show({ title: "Moved to the trash", detail: `${p} · .malachite/trash`, state: "done" }); }, fail) }),
@@ -197,7 +197,7 @@ export function App() {
       <header className="bar">
         <AppMark app="malachite" size={26} idle label="Malachite" />
         <span className="wm">Malachite</span>
-        <span className="well vault" title={vault?.root}>{FileIcon({ path: "", dir: true })}{vault?.name ?? "…"}</span>
+        <span className="well docs" title={docs?.root}>{FileIcon({ path: "", dir: true })}{docs?.name ?? "…"}</span>
         <span className="bend">
           {page === "notes" && <Key kind="primary" icon="new-file" onClick={() => newNote()}>New note</Key>}
           <RuntimesKey running={nRunning} version={peekVersion} />
@@ -214,12 +214,12 @@ export function App() {
         pages={[{ id: "notes", label: "Notes", icon: "a-notes", keys: "Alt+1", count: nRunning ? "live" : mdCount }, { id: "views", label: "Views", icon: "a-views", keys: "Alt+2" },
           { id: "trace", label: "Trace", icon: "a-trace", keys: "Alt+3" }, { id: "log", label: "Log", icon: "a-log", keys: "Alt+4" }]}
         foot={[{ id: "search", label: "Search", icon: "search", keys: "Ctrl+K" }, { id: "settings", label: "Settings", icon: "a-settings" }, { id: "help", label: "Help", icon: "question", keys: "F1" }]}
-        onFoot={(id) => { if (id === "search") setSearch(true); else show({ title: id === "settings" ? "Settings" : "Help", detail: "Not in v0.1: the vault's settings are vault.toml; the guide is the README.", state: "done" }); }} />
+        onFoot={(id) => { if (id === "search") setSearch(true); else show({ title: id === "settings" ? "Settings" : "Help", detail: "Not in v0.1: the docs' settings are docs.toml; the guide is the README.", state: "done" }); }} />
 
       <main className="pages">
         {page === "notes" && (
           <div className="notes">
-            <Panel name={vault?.name ?? "Vault"} count={`${items.length}`} side="left" hidden={hideL} onHidden={setHideL} icon="a-notes" width={262}
+            <Panel name={docs?.name ?? "Docs"} count={`${items.length}`} side="left" hidden={hideL} onHidden={setHideL} icon="a-notes" width={262}
               head={<span className="tools"><Key size="sm" kind="quiet" round icon="new-file" label="New note (Ctrl N)" onClick={() => newNote("")} /><Key size="sm" kind="quiet" round icon="new-folder" label="New folder" onClick={() => actions.newFolder("")} /></span>}>
               <Tree entries={tree} current={current} open={expanded} actions={actions}
                 onToggle={(p) => setExpanded((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; })} />
@@ -239,7 +239,7 @@ export function App() {
               </div>
               {current && (
                 <div className="crumb">
-                  <span>{vault?.name} / {current.split("/").slice(0, -1).map((d) => `${d} / `).join("")}<b>{current.slice(current.lastIndexOf("/") + 1)}</b></span>
+                  <span>{docs?.name} / {current.split("/").slice(0, -1).map((d) => `${d} / `).join("")}<b>{current.slice(current.lastIndexOf("/") + 1)}</b></span>
                   <span className="bend">
                     {note && <span>{draft !== null ? "saving…" : note.sealed ? "sealed" : "saved"}</span>}
                     {note && !note.sealed && <Key size="sm" icon="lock" onClick={() => actions.seal(note.path)} title="Seal: freeze the body and record its hash">Seal…</Key>}
@@ -247,7 +247,7 @@ export function App() {
                 </div>
               )}
               <div className="body">
-                {!current && <div className="empty"><AppMark app="malachite" size={72} idle label="" /><p>Open a note from the vault, or make one.</p><Key kind="primary" icon="new-file" onClick={() => newNote("")}>New note</Key></div>}
+                {!current && <div className="empty"><AppMark app="malachite" size={72} idle label="" /><p>Open a note from the docs, or make one.</p><Key kind="primary" icon="new-file" onClick={() => newNote("")}>New note</Key></div>}
                 {note && mode === "read" && <ReadView note={note} runs={runs} resolve={resolve} onLink={onLink} onRun={runCell} onStop={stopCell} />}
                 {note && mode === "edit" && <Editor key={`${note.path}:${note.sealed}`} text={draft ?? note.text} readOnly={note.sealed} onChange={setDraft} onSave={() => draft !== null && current && save(current, draft)} />}
                 {current && t !== "md" && <FileView path={current} text={plain} />}
@@ -267,12 +267,12 @@ export function App() {
         )}
         {(page === "views" || page === "trace") && (
           <Panel name={page === "views" ? "Views" : "Trace"}>
-            <div className="empty"><p>{page === "views" ? "Board, list and timeline of the vault's notes, by their properties" : "What a note, run or model came from and what came of it, on React Flow"}: in v0.2.</p></div>
+            <div className="empty"><p>{page === "views" ? "Board, list and timeline of the docs' notes, by their properties" : "What a note, run or model came from and what came of it, on React Flow"}: in v0.2.</p></div>
           </Panel>
         )}
       </main>
 
-      {search && <Search items={searchItems} scopes={["All", "Notes", "Files", "Commands"]} placeholder={`Search ${vault?.name ?? "the vault"} or run a command`} onClose={() => setSearch(false)} />}
+      {search && <Search items={searchItems} scopes={["All", "Notes", "Files", "Commands"]} placeholder={`Search ${docs?.name ?? "the docs"} or run a command`} onClose={() => setSearch(false)} />}
       {ask && <AskDialog ask={ask} onClose={() => setAsk(null)} />}
       <Toasts toasts={toasts} onDismiss={dismiss} />
     </div>
@@ -284,7 +284,7 @@ function FileView({ path, text }: { path: string; text: string | null }) {
   return (
     <div className="fileview">
       <div className="fcard"><FileIcon path={path} size={20} /><b>{path.slice(path.lastIndexOf("/") + 1)}</b>
-        <small>{owner ? `${owner} draws this once it is installed; Malachite only indexes its name and type.` : IMAGE.has(t) ? "an image in the vault" : "a file in the vault"}</small></div>
+        <small>{owner ? `${owner} draws this once it is installed; Malachite only indexes its name and type.` : IMAGE.has(t) ? "an image in the docs" : "a file in the docs"}</small></div>
       {IMAGE.has(t) && <img className="fimg" src={api.raw(path)} alt={path} />}
       {text !== null && <pre className="ftext">{text}</pre>}
     </div>
@@ -298,7 +298,7 @@ function AskDialog({ ask, onClose }: { ask: Ask; onClose: () => void }) {
     <Dialog title={ask.title} onClose={onClose} actions={<><Key kind={ask.danger ? "danger" : "primary"} onClick={go}>{ask.ok}</Key><Key onClick={onClose}>Cancel</Key></>}>
       {ask.label
         ? <label className="well ask"><input autoFocus value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} aria-label={ask.label} /><em>{ask.label}</em></label>
-        : <p>{ask.danger && ask.ok === "Seal" ? "Its body is frozen and hashed; afterwards it only takes annotations, and corrections go in a new note." : "It goes to .malachite/trash in the vault, so it can come back."}</p>}
+        : <p>{ask.danger && ask.ok === "Seal" ? "Its body is frozen and hashed; afterwards it only takes annotations, and corrections go in a new note." : "It goes to .malachite/trash in the docs, so it can come back."}</p>}
     </Dialog>
   );
 }

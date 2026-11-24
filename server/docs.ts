@@ -1,6 +1,6 @@
-// The vault: the folder Malachite opens (pb#415). The files are the record; `.malachite/` is a cache
+// The docs: the folder Malachite opens (pb#415). The files are the record; `.malachite/` is a cache
 // (the outputs of cells, the trash) and `log/` the activity log. Every path from the page goes through
-// `resolve`, which keeps it inside the vault.
+// `resolve`, which keeps it inside the docs.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,7 +9,7 @@ import { bodyHash, join, split } from "./note.ts";
 
 export type Entry = { path: string; name: string; kind: "dir" | "file"; size?: number; mtime?: number; children?: Entry[] };
 export type Event = { time: string; actor: string; action: string; target?: string; details?: Record<string, unknown> };
-export class VaultError extends Error { readonly status: number; constructor(message: string, status = 400) { super(message); this.status = status; } }
+export class DocsError extends Error { readonly status: number; constructor(message: string, status = 400) { super(message); this.status = status; } }
 
 const HIDDEN = new Set([".malachite", ".git", "node_modules", ".DS_Store"]);
 const SCHEMA = 1;
@@ -17,7 +17,7 @@ const SCHEMA = 1;
 /** "n_" and 12 base32 letters: stable across renames; time-ordered enough to read. */
 export const newId = (prefix = "n") => `${prefix}_${Date.now().toString(36)}${randomBytes(4).toString("hex")}`;
 
-export class Vault {
+export class Docs {
   readonly root: string;
   name: string;
   author: string;
@@ -25,26 +25,26 @@ export class Vault {
 
   constructor(root: string) {
     this.root = fs.realpathSync(root);
-    const file = path.join(this.root, "vault.toml");
+    const file = path.join(this.root, "docs.toml");
     const conf = fs.existsSync(file) ? readToml(fs.readFileSync(file, "utf8")) : {};
-    if (conf.schema && Number(conf.schema) > SCHEMA) throw new VaultError(`vault.toml has schema ${conf.schema}; this Malachite reads ${SCHEMA}. Update Malachite.`);
+    if (conf.schema && Number(conf.schema) > SCHEMA) throw new DocsError(`docs.toml has schema ${conf.schema}; this Malachite reads ${SCHEMA}. Update Malachite.`);
     this.name = conf.name ?? path.basename(this.root);
     this.author = conf.author ?? os.userInfo().username;
     if (!fs.existsSync(file)) {
-      fs.writeFileSync(file, `# A Malachite vault (github.com/paperboatlab/malachite)\nname = ${JSON.stringify(this.name)}\nschema = ${SCHEMA}\nauthor = ${JSON.stringify(this.author)}\ncreated = ${JSON.stringify(new Date().toISOString())}\n`);
-      this.log("vault.created");
+      fs.writeFileSync(file, `# Malachite docs (github.com/paperboatlab/malachite)\nname = ${JSON.stringify(this.name)}\nschema = ${SCHEMA}\nauthor = ${JSON.stringify(this.author)}\ncreated = ${JSON.stringify(new Date().toISOString())}\n`);
+      this.log("docs.created");
     }
   }
 
-  /** An absolute path for a vault-relative one, or an error if it leaves the vault. */
+  /** An absolute path for a docs-relative one, or an error if it leaves the docs. */
   resolve(rel: string): string {
-    if (typeof rel !== "string" || rel.includes("\0")) throw new VaultError("bad path");
+    if (typeof rel !== "string" || rel.includes("\0")) throw new DocsError("bad path");
     const abs = path.resolve(this.root, rel.replace(/^\/+/, ""));
-    if (abs !== this.root && !abs.startsWith(this.root + path.sep)) throw new VaultError("outside the vault");
+    if (abs !== this.root && !abs.startsWith(this.root + path.sep)) throw new DocsError("outside the docs");
     // a symlink may point out: check where it really lands (the last part may not exist yet)
     let real = abs;
     try { real = fs.realpathSync(abs); } catch { try { real = path.join(fs.realpathSync(path.dirname(abs)), path.basename(abs)); } catch { /* a new folder chain */ } }
-    if (real !== this.root && !real.startsWith(this.root + path.sep)) throw new VaultError("outside the vault");
+    if (real !== this.root && !real.startsWith(this.root + path.sep)) throw new DocsError("outside the docs");
     return abs;
   }
   rel = (abs: string) => path.relative(this.root, abs).split(path.sep).join("/");
@@ -70,15 +70,15 @@ export class Vault {
 
   read(rel: string): string {
     const abs = this.resolve(rel);
-    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) throw new VaultError(`${rel} not found`, 404);
+    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) throw new DocsError(`${rel} not found`, 404);
     return fs.readFileSync(abs, "utf8");
   }
 
   /** Writes a note; a sealed one refuses (corrections are annotations or a new note). */
   write(rel: string, text: string) {
     const abs = this.resolve(rel);
-    if (fs.existsSync(abs) && split(fs.readFileSync(abs, "utf8")).props.sealed) throw new VaultError(`${rel} is sealed`, 409);
-    if (split(text).props.sealed) throw new VaultError("a note is sealed with Seal, not by writing", 409);
+    if (fs.existsSync(abs) && split(fs.readFileSync(abs, "utf8")).props.sealed) throw new DocsError(`${rel} is sealed`, 409);
+    if (split(text).props.sealed) throw new DocsError("a note is sealed with Seal, not by writing", 409);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     const tmp = `${abs}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, text);
@@ -106,8 +106,8 @@ export class Vault {
 
   rename(from: string, to: string) {
     const a = this.resolve(from), b = this.resolve(to);
-    if (a === this.root) throw new VaultError("the vault itself can't move");
-    if (fs.existsSync(b)) throw new VaultError(`${to} exists`, 409);
+    if (a === this.root) throw new DocsError("the docs folder itself can't move");
+    if (fs.existsSync(b)) throw new DocsError(`${to} exists`, 409);
     fs.mkdirSync(path.dirname(b), { recursive: true });
     fs.renameSync(a, b);
     this.log("file.moved", to, { from });
@@ -116,7 +116,7 @@ export class Vault {
   /** Move to trash: into `.malachite/trash/<time>/`, so it can come back. */
   trash(rel: string) {
     const abs = this.resolve(rel);
-    if (abs === this.root) throw new VaultError("the vault itself can't go to the trash");
+    if (abs === this.root) throw new DocsError("the docs folder itself can't go to the trash");
     const dest = path.join(this.root, ".malachite", "trash", new Date().toISOString().replace(/[:.]/g, "-"), rel);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.renameSync(abs, dest);
@@ -127,7 +127,7 @@ export class Vault {
   seal(rel: string) {
     const abs = this.resolve(rel);
     const { props, body } = split(this.read(rel));
-    if (props.sealed) throw new VaultError(`${rel} is already sealed`, 409);
+    if (props.sealed) throw new DocsError(`${rel} is already sealed`, 409);
     const hash = bodyHash(body);
     fs.writeFileSync(abs, join({ ...props, status: "sealed", sealed: new Date().toISOString().replace(/\.\d+Z$/, "Z"), sealed_by: this.author, hash: `sha256:${hash}` }, body));
     this.log("note.sealed", rel, { hash: `sha256:${hash}` });
@@ -161,7 +161,7 @@ export class Vault {
   }
 }
 
-// ponytail: vault.toml holds flat `key = value` lines; a full TOML parser when it grows tables.
+// ponytail: docs.toml holds flat `key = value` lines; a full TOML parser when it grows tables.
 function readToml(text: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const line of text.split("\n")) {

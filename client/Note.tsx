@@ -57,7 +57,7 @@ function CellView({ cell, n, run, sealed, onRun, onStop }: { cell: Cell; n: numb
         {run?.ms !== undefined && !busy && <span title={run.ran}>· {run.ms < 1000 ? `${run.ms} ms` : `${(run.ms / 1000).toFixed(1)} s`} · {run.ran ? new Date(run.ran).toTimeString().slice(0, 5) : ""}</span>}
         <span className="bend">
           {busy ? <Key size="sm" icon="debug-stop" onClick={onStop} title="Stop (restarts the session if it doesn't stop)">Stop</Key>
-            : <Key size="sm" kind="quiet" icon="play" onClick={onRun} disabled={sealed} title={sealed ? "A sealed note's cells keep their outputs" : "Run in the vault's session"}>Run</Key>}
+            : <Key size="sm" kind="quiet" icon="play" onClick={onRun} disabled={sealed} title={sealed ? "A sealed note's cells keep their outputs" : "Run in the docs' session"}>Run</Key>}
         </span>
       </div>
       <pre className="code">{cell.code}</pre>
