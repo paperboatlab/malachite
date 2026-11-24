@@ -29,6 +29,7 @@ function chdir(lang: Lang, dir: string): string {
 
 const INTERRUPT_GRACE_MS = 3000;   // after an interrupt with no reply, the session restarts (docs/runtime.md)
 const safe = (id: string) => id.replace(/[^\w-]+/g, "_");
+export class NoSession extends Error {}
 
 export class Sessions {
   private sessions = new Map<Lang, Promise<Session>>();
@@ -145,6 +146,15 @@ export class Sessions {
     await this.control.call("interrupt", { lease: s.lease.id }).catch(() => s.rt.request("interrupt").catch(() => {}));
     setTimeout(() => { if (run && this.running.get(lang) === run) this.restart(lang); }, INTERRUPT_GRACE_MS);
     return { interrupted: true };
+  }
+
+  /** The editor's questions to a running session (paperboat-runtime/0 `lint`, `complete`): answered at
+   *  once even while a cell runs; never starts a session just to ask. */
+  async ask(lang: Lang, op: string, args: Record<string, unknown>) {
+    if (op !== "lint" && op !== "complete") throw new Error(`${op} is not asked from the editor`);
+    const p = this.sessions.get(lang);
+    if (!p) throw new NoSession(`no ${lang} session runs`);
+    return (await p).rt.request(op, args);
   }
 
   /** Ends every session and the daemon connection (which releases the leases). */

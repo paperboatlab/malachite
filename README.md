@@ -18,7 +18,7 @@ the other apps' embeds when those apps are rebuilt.
 
 ```text
 server/       the app server (Node 22, TypeScript, no dependencies): hub, index, sessions, the API
-client/       the page (React, @paperboatlab/ui, CodeMirror, marked), built into dist/
+client/       the page (React, @paperboatlab/ui: tree, editor, plot, canvas; React Flow, marked), built into dist/
 bin/malachite the command
 examples/     tank-lab, a hub to try it on
 test/         unit tests; e2e.test.ts runs a real cell when paperboatd is there

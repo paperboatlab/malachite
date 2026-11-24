@@ -1,6 +1,7 @@
 // A note: its properties (the front matter, time and author set by the app), then the body. Read shows
 // it rendered with its cells runnable in place; Edit is the Markdown itself.
 import { Icon, Key, Spinner, type IconName } from "@paperboatlab/ui";
+import { Editor, julia, python, type EditorSettings } from "@paperboatlab/ui/editor";
 import { useMemo } from "react";
 import type { Cell, NoteData, Output, Props, Run } from "./api.ts";
 import { renderer, type Resolve } from "./markdown.ts";
@@ -46,7 +47,9 @@ function Out({ o }: { o: Output }) {
   return <pre className="val">{d["text/plain"] ?? ""}</pre>;
 }
 
-function CellView({ cell, n, run, sealed, onRun, onStop }: { cell: Cell; n: number; run?: Run; sealed: boolean; onRun: () => void; onStop: () => void }) {
+export type CodeLook = { settings: EditorSettings; appTheme: "light" | "dark" };
+
+function CellView({ cell, n, run, sealed, look, onRun, onStop }: { cell: Cell; n: number; run?: Run; sealed: boolean; look: CodeLook; onRun: () => void; onStop: () => void }) {
   const busy = run?.state === "running" || run?.state === "queued";
   return (
     <div className={`cell${busy ? " run" : ""}`}>
@@ -60,7 +63,7 @@ function CellView({ cell, n, run, sealed, onRun, onStop }: { cell: Cell; n: numb
             : <Key size="sm" kind="quiet" icon="play" onClick={onRun} disabled={sealed} title={sealed ? "A sealed note's cells keep their outputs" : "Run in the hub's session"}>Run</Key>}
         </span>
       </div>
-      <pre className="code">{cell.code}</pre>
+      <div className="code"><Editor value={cell.code} language={cell.lang === "julia" ? julia : python} settings={look.settings} appTheme={look.appTheme} readOnly ariaLabel={`Cell ${n}, ${cell.lang}`} /></div>
       {run && run.outputs.length > 0 && <div className={`out${busy ? " prev" : ""}`}>{run.outputs.map((o, i) => <Out key={i} o={o} />)}</div>}
       {run?.runtime && !busy && <div className="ofoot">{run.runtime.name} {run.runtime.version} · {run.runtime.backend}{run.state === "failed" ? " · failed" : ""}</div>}
     </div>
@@ -82,8 +85,8 @@ function segments(body: string, cells: Cell[]) {
   return out;
 }
 
-export function ReadView({ note, runs, resolve, onLink, onRun, onStop }: {
-  note: NoteData; runs: Record<string, Run>; resolve: Resolve; onLink: (target: string, missing: boolean) => void; onRun: (c: Cell) => void; onStop: (c: Cell) => void;
+export function ReadView({ note, runs, resolve, look, onLink, onRun, onStop }: {
+  note: NoteData; runs: Record<string, Run>; resolve: Resolve; look: CodeLook; onLink: (target: string, missing: boolean) => void; onRun: (c: Cell) => void; onStop: (c: Cell) => void;
 }) {
   const md = useMemo(() => renderer(resolve, note.path), [resolve, note.path]);
   const parts = useMemo(() => segments(note.body, note.cells), [note.body, note.cells]);
@@ -96,7 +99,7 @@ export function ReadView({ note, runs, resolve, onLink, onRun, onStop }: {
       <Properties props={note.props} intact={note.intact} />
       {parts.map((p, i) => "md" in p
         ? <div key={i} dangerouslySetInnerHTML={{ __html: md(p.md) }} />
-        : <CellView key={`${i}-${p.cell.hash}`} cell={p.cell} n={p.n} run={runs[p.cell.hash] ?? note.outputs[p.cell.hash]} sealed={note.sealed} onRun={() => onRun(p.cell)} onStop={() => onStop(p.cell)} />)}
+        : <CellView key={`${i}-${p.cell.hash}`} cell={p.cell} n={p.n} run={runs[p.cell.hash] ?? note.outputs[p.cell.hash]} sealed={note.sealed} look={look} onRun={() => onRun(p.cell)} onStop={() => onStop(p.cell)} />)}
     </article>
   );
 }

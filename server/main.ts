@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { Control, ControlError } from "./control.ts";
 import { Index } from "./index.ts";
 import { bodyHash, parse, type Lang } from "./note.ts";
-import { Sessions } from "./sessions.ts";
+import { NoSession, Sessions } from "./sessions.ts";
 import { Hub, HubError } from "./hub.ts";
 
 export const DEFAULT_PORT = 59210;   // paperboat/apps.toml
@@ -106,11 +106,13 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
         case "POST /api/interrupt": return send(res, 200, await sessions.interrupt(lang(body.lang)));
         case "POST /api/restart": return send(res, 200, sessions.restart(lang(body.lang)));
         case "GET /api/runtimes": return send(res, 200, await sessions.peek());
+        case "POST /api/ask": return send(res, 200, await sessions.ask(lang(body.lang), String(body.op), body.args ?? {}));
         default: return send(res, 404, { error: `no ${route}` });
       }
     } catch (e) {
       if (e instanceof HubError) return send(res, e.status, { error: e.message });
       if (e instanceof ControlError) return send(res, 503, { error: e.message });
+      if (e instanceof NoSession) return send(res, 409, { error: e.message });
       console.error(e);
       return send(res, 500, { error: String((e as Error).message ?? e) });
     }

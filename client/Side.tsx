@@ -1,26 +1,27 @@
 // The Links card (backlinks with their line, the note's links, its history from the log) and the
 // runtimes key with its peek (REBRAND "Runtimes key"): one key, never a row of pills.
 import { Icon, Key, Spinner, useDismiss } from "@paperboatlab/ui";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type LogEvent, type Lang, type Links, type Peek } from "./api.ts";
-import { FileIcon } from "./files.tsx";
+import { FileGlyph } from "./files.tsx";
 
-export function LinksCard({ links, onOpen, onCreate }: { links: Links | null; onOpen: (p: string) => void; onCreate: (name: string) => void }) {
+export function LinksCard({ links, graph, onOpen, onCreate }: { links: Links | null; graph?: ReactNode; onOpen: (p: string) => void; onCreate: (name: string) => void }) {
   if (!links) return <div className="sh muted">No note open.</div>;
   return (
     <>
+      {graph && <><div className="sh"><b>Local graph</b><code>depth 1</code></div><div className="lgraph">{graph}</div></>}
       <div className="sh"><b>Backlinks</b><code>{links.backlinks.length}</code></div>
       {links.backlinks.length === 0 && <p className="none">Nothing links here yet.</p>}
       {links.backlinks.map((b) => (
         <button key={b.path} type="button" className="bl" onClick={() => onOpen(b.path)}>
-          <div><FileIcon path={b.path} />{b.title}</div>
+          <div><FileGlyph path={b.path} />{b.title}</div>
           {b.context && <p>{b.context}</p>}
         </button>
       ))}
       <div className="sh hr"><b>Links</b><code>{links.links.length}</code></div>
       <div className="ol">
         {links.links.map((l) => l.path
-          ? <button key={l.link} type="button" onClick={() => onOpen(l.path!)}><FileIcon path={l.path} />{l.link}</button>
+          ? <button key={l.link} type="button" onClick={() => onOpen(l.path!)}><FileGlyph path={l.path} />{l.link}</button>
           : <button key={l.link} type="button" className="miss" onClick={() => onCreate(l.link)} title="Not written yet: click to create"><Icon name="file" size={16} />{l.link}<small>not yet</small></button>)}
       </div>
       <div className="sh hr"><b>History</b><code>log/</code></div>

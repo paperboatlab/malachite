@@ -42,6 +42,7 @@ export const api = {
   interrupt: (lang: Lang) => call("POST", "/api/interrupt", { lang }),
   restart: (lang: Lang) => call("POST", "/api/restart", { lang }),
   runtimes: () => call<Peek>("GET", "/api/runtimes"),
+  ask: (lang: Lang, op: string, args: Record<string, unknown>) => call<unknown>("POST", "/api/ask", { lang, op, args }),
   raw: (p: string) => `/api/raw?path=${q(p)}`,
 };
 

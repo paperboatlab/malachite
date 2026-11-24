@@ -128,3 +128,11 @@ test("without the daemon a cell fails and says why", async () => {
   while (run.state !== "failed" && run.state !== "done") await new Promise((r) => setTimeout(r, 10));
   assert.match((run.outputs[0] as any).error.message, /paperboatd is not running/);
 });
+
+test("the editor asks only a running session, and only lint and complete", async () => {
+  const dir = tmp();
+  const hub = new Hub(dir);
+  const s = new Sessions(hub, new Control(path.join(dir, "none.sock"), false), () => {});
+  await assert.rejects(s.ask("julia", "lint", { code: "x" }), /no julia session runs/);
+  await assert.rejects(s.ask("julia", "eval", { code: "x" }), /not asked from the editor/);
+});
