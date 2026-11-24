@@ -35,6 +35,7 @@ export const api = {
   move: (from: string, to: string) => call("POST", "/api/move", { from, to }),
   trash: (p: string) => call("POST", "/api/trash", { path: p }),
   seal: (p: string) => call("POST", "/api/seal", { path: p }),
+  prop: (p: string, key: string, value: string) => call("POST", "/api/prop", { path: p, key, value }),
   reveal: (p: string) => call("POST", "/api/reveal", { path: p }),
   links: (p: string) => call<Links>("GET", `/api/links?path=${q(p)}`),
   log: () => call<LogEvent[]>("GET", "/api/log?limit=300"),

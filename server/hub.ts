@@ -79,11 +79,26 @@ export class Hub {
     const abs = this.resolve(rel);
     if (fs.existsSync(abs) && split(fs.readFileSync(abs, "utf8")).props.sealed) throw new HubError(`${rel} is sealed`, 409);
     if (split(text).props.sealed) throw new HubError("a note is sealed with Seal, not by writing", 409);
+    this.put(abs, text);
+    this.log("note.updated", rel);
+  }
+
+  /** One front matter property set (a board card moved to a column), or removed with "". */
+  setProp(rel: string, key: string, value: string) {
+    if (!/^[A-Za-z_][\w-]*$/.test(key) || ["id", "sealed", "sealed_by", "hash"].includes(key)) throw new HubError(`${key} is not a property to set`, 400);
+    const abs = this.resolve(rel), { props, body } = split(fs.readFileSync(abs, "utf8"));
+    if (props.sealed) throw new HubError(`${rel} is sealed`, 409);
+    const from = props[key] ?? "";
+    if (value) props[key] = value; else delete props[key];
+    this.put(abs, join(props, body));
+    this.log("note.property", rel, { key, from, to: value });
+  }
+
+  private put(abs: string, text: string) {
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     const tmp = `${abs}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, text);
     fs.renameSync(tmp, abs);
-    this.log("note.updated", rel);
   }
 
   /** A new note with its id, time and author set by the app; a free name if this one is taken. */
