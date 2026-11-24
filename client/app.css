@@ -49,9 +49,10 @@ body { background: var(--surface-ground); color: var(--text); font: 13px/1.45 va
 .doc table { border-collapse: collapse; margin: 0 0 12px; } .doc th, .doc td { border: 1px solid var(--line); padding: 4px 10px; text-align: left; }
 .doc img { max-width: 100%; border-radius: var(--radius-md); }
 .doc a { color: var(--text); text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
-.wl { color: var(--text); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; cursor: pointer; }
-.wl:hover { text-decoration-color: var(--text); }
-.wl.miss { color: var(--text-muted); text-decoration-style: dashed; }
+/* a link to a note or file: the deeper malachite (Malachite's own file colour), as Obsidian colours its links */
+a.wl, .wl { color: var(--file-malachite); font-weight: 500; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--file-malachite) 35%, transparent); text-underline-offset: 3px; cursor: pointer; transition: text-decoration-color var(--motion); }
+a.wl:hover, .wl:hover { text-decoration-color: var(--file-malachite); }
+a.wl.miss, .wl.miss { color: var(--text-muted); text-decoration-style: dashed; }
 .embed-card { display: flex; flex-direction: column; gap: 2px; margin: 10px 0; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-raised); cursor: pointer; }
 .embed-card b { font: 500 12.5px var(--font-mono); } .embed-card small { color: var(--text-muted); font-size: 12px; }
 .props { display: grid; grid-template-columns: 128px 1fr; gap: 2px 12px; padding: 4px 0 12px; margin: 0 0 16px; border-bottom: 1px solid var(--line); }
