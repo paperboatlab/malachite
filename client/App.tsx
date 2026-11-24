@@ -255,7 +255,7 @@ export function App() {
               {note && <div className="efoot"><span>markdown · {note.body.split(/\s+/).filter(Boolean).length} words · {note.cells.length} cells</span><span>{links?.backlinks.length ?? 0} backlinks · {links?.links.length ?? 0} links</span></div>}
             </section>
 
-            <Panel name="Links" count={note ? "this note" : ""} side="right" hidden={hideR} onHidden={setHideR} icon="references" width={300}>
+            <Panel name="Links" side="right" hidden={hideR} onHidden={setHideR} icon="references" width={300}>
               <LinksCard links={links} onOpen={open} onCreate={(n) => onLink(n, true)} />
             </Panel>
           </div>
@@ -297,7 +297,7 @@ function AskDialog({ ask, onClose }: { ask: Ask; onClose: () => void }) {
   return (
     <Dialog title={ask.title} onClose={onClose} actions={<><Key kind={ask.danger ? "danger" : "primary"} onClick={go}>{ask.ok}</Key><Key onClick={onClose}>Cancel</Key></>}>
       {ask.label
-        ? <label className="well ask"><input autoFocus value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} aria-label={ask.label} /><em>{ask.label}</em></label>
+        ? <label className="well ask"><input autoFocus value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); go(); } }} aria-label={ask.label} /><em>{ask.label}</em></label>
         : <p>{ask.danger && ask.ok === "Seal" ? "Its body is frozen and hashed; afterwards it only takes annotations, and corrections go in a new note." : "It goes to .malachite/trash in the hub, so it can come back."}</p>}
     </Dialog>
   );
