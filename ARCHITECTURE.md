@@ -35,6 +35,10 @@ flowchart LR
   the activity log (`log/YYYY-MM.jsonl`).
 - `server/hubs.ts`: the hubs this machine knows, `$PAPERBOAT_HOME/hubs.toml` (id, path, place): every
   app and the Launcher read it; a hub is found by its id, so a rename or a move keeps it.
+  Cloud hubs v1 are synced folders, as in Obsidian: the provider's desktop app keeps the folder in sync,
+  `placeOf` names it from the path (Dropbox, OneDrive, Google Drive, iCloud Drive), and `conflictsIn`
+  finds the copies a sync client leaves when two machines change a file (marked in the tree, told on
+  open). Paperboat syncs nothing itself; the per-machine history bundles make that safe.
 - `server/history.ts`: `History`: Git underneath, never shown. The Git folder lives outside the hub
   (`$PAPERBOAT_HOME/hubs/<id>/git`, work tree = the hub); a version a few seconds after files change
   (described in words), `versions` (the hub's or one file's), `restore` (the version before is kept);

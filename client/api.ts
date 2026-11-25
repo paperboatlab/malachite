@@ -15,9 +15,10 @@ export type Links = { links: { link: string; path: string | null }[]; backlinks:
 export type Session = { id: string; runtime: string; backend: string; state: string; uptime_s?: number; idle_s?: number; stats: { cpu_percent: number; memory_bytes: number } | null; running: { note: string; since?: string }[] };
 export type Trashed = { id: string; path: string; kind: "file" | "folder"; time: string; actor: string };
 /** The open hub's settings (.malachite/hub.toml) and where it is. */
-export type HubConf = { id: string; name: string; schema: number; author: string; created: string; keep: "90d" | "1y" | "always"; ignore: string; root: string; shown: string; place: "local" | "google-drive" };
+export type HubConf = { id: string; name: string; schema: number; author: string; created: string; keep: "90d" | "1y" | "always"; ignore: string; root: string; shown: string; place: Place; conflicts: string[] };
 /** A hub this machine knows ($PAPERBOAT_HOME/hubs.toml). */
-export type KnownHub = { id: string; path: string; shown: string; place: "local" | "google-drive"; name: string; missing?: boolean };
+export type Place = "local" | "google-drive" | "onedrive" | "dropbox" | "icloud";
+export type KnownHub = { id: string; path: string; shown: string; place: Place; name: string; missing?: boolean; conflicts?: string[] };
 export type Version = { id: string; time: string; author: string; what: string };
 export type Peek = { sessions: Session[]; runtimes: { name: string; version: string }[] };
 

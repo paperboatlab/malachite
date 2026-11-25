@@ -52,3 +52,28 @@ test("a hub that Malachite has open won't move", () => {
   assert.equal(r.code, 2);
   assert.match(r.err, /close it first/);
 });
+
+test("the sync client is read from the folder's path; Paperboat syncs nothing itself", async () => {
+  const { placeOf, isConflictCopy } = await import("../server/hubs.ts");
+  const cases: [string, string][] = [
+    ["/home/a/hubs/x", "local"], ["/home/a/Dropbox/hubs/x", "dropbox"], ["/home/a/Dropbox (Lab)/x", "dropbox"],
+    ["/Users/a/Library/CloudStorage/Dropbox/x", "dropbox"], ["/home/a/OneDrive/x", "onedrive"], ["C:\\Users\\a\\OneDrive - Uni\\x", "onedrive"],
+    ["/Users/a/Library/CloudStorage/GoogleDrive-a@b.c/My Drive/x", "google-drive"], ["G:\\My Drive\\x", "google-drive"],
+    ["/Users/a/Library/Mobile Documents/com~apple~CloudDocs/x", "icloud"], ["/home/a/DropboxNotes/x", "local"],
+  ];
+  for (const [p, want] of cases) assert.equal(placeOf(p), want, p);
+  for (const n of ["a (Ana's conflicted copy 2026-11-25).md", "a.sync-conflict-20261125-101010-ABCD.md", "a.md.conflict1"]) assert.ok(isConflictCopy(n), n);
+  for (const n of ["a.md", "conflict.md", "a (2).md"]) assert.ok(!isConflictCopy(n), n);
+});
+
+test("a hub in Dropbox with a conflict copy says so", () => {
+  const dir = path.join(home, "Dropbox", "lab");
+  assert.equal(hub("new", "lab", "--in", dir).code, 0);
+  fs.writeFileSync(path.join(dir, "a (Ana's conflicted copy 2026-11-25).md"), "x");
+  const listed = hub("list", "--json").json().find((h: { name: string }) => h.name === "lab");
+  assert.equal(listed.place, "dropbox");
+  assert.deepEqual(listed.conflicts, ["a (Ana's conflicted copy 2026-11-25).md"]);
+  assert.match(hub("list").out, /lab\s+Dropbox · .*1 conflict copy/);
+  fs.rmSync(path.join(dir, "a (Ana's conflicted copy 2026-11-25).md"));
+  assert.match(hub("list").out, /lab\s+Dropbox · .*Dropbox's app syncs it/);
+});

@@ -4,9 +4,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { Hub, HubError, KEEP, peek, type HubKey } from "./hub.ts";
 import { History } from "./history.ts";
-import { defaultFolder, find, forget, infos, remember, tilde, type HubInfo } from "./hubs.ts";
+import { defaultFolder, find, forget, infos, remember, tilde, type HubInfo, type Place } from "./hubs.ts";
 
-const placeName = (h: HubInfo) => (h.place === "google-drive" ? "Google Drive" : "Local");
+const PLACES: Record<Place, string> = { local: "Local", "google-drive": "Google Drive", onedrive: "OneDrive", dropbox: "Dropbox", icloud: "iCloud Drive" };
+const placeName = (h: HubInfo) => PLACES[h.place];
+/** A hub's state in words: what is wrong first, then who keeps it in sync. */
+const state = (h: HubInfo) => h.missing ? "can't find the folder" : h.conflicts?.length ? `${h.conflicts.length} conflict cop${h.conflicts.length === 1 ? "y" : "ies"}` : h.place === "local" ? "on this computer" : `${PLACES[h.place]}'s app syncs it`;
 
 function table(head: string[], rows: string[][]) {
   const w = head.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].length)));
@@ -37,7 +40,7 @@ export function run(argv: string[]): number {
       const all = infos();
       out(all, () => {
         if (!all.length) return console.log("No hubs yet · paperboat hub new <name> makes one");
-        table(["HUB", "WHERE", "STATE"], all.map((h) => [h.name, `${placeName(h)} · ${tilde(h.path)}`, h.missing ? "can't find the folder" : "on this computer"]));
+        table(["HUB", "WHERE", "STATE"], all.map((h) => [h.name, `${placeName(h)} · ${tilde(h.path)}`, state(h)]));
       });
       return 0;
     }
@@ -50,6 +53,8 @@ export function run(argv: string[]): number {
         console.log(`holds       ${x.notes} notes · ${x.runs} runs · ${x.models} models · ${x.files} files · ${size(x.bytes)}`);
         console.log(`history     ${new History(new Hub(h.path)).versions(".", 100_000).length} versions, kept ${c.keep === "always" ? "always" : c.keep === "1y" ? "1 year" : "90 days"}`);
         console.log(`made        ${String(c.created).slice(0, 10)} by ${c.author} · hub format ${c.schema}`);
+        if (h.place !== "local") console.log(`sync        ${state(h)} (Paperboat syncs nothing itself)`);
+        for (const f of h.conflicts ?? []) console.log(`conflict    ${f}: a sync client's copy; keep what you want, trash the other`);
       });
       return 0;
     }
