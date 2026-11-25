@@ -26,7 +26,7 @@ const q = (p: string) => encodeURIComponent(p);
 
 export const api = {
   hub: () => call<{ name: string; root: string; author: string }>("GET", "/api/hub"),
-  about: () => call<{ format: number; paperboat?: string | null }>("GET", "/api/about"),
+  about: () => call<{ format: number; paperboat: string | null }>("GET", "/api/about"),
   tree: () => call<Entry[]>("GET", "/api/tree"),
   index: () => call<Item[]>("GET", "/api/index"),
   note: (p: string) => call<NoteData>("GET", `/api/note?path=${q(p)}`),

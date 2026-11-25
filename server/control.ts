@@ -1,7 +1,7 @@
 // paperboat-control/0 (paperboat/docs/control.md): one JSON object per line to paperboatd over its Unix
 // socket. Started on demand, as the CLI does: paperboatd beside `paperboat` on PATH, or $PAPERBOATD.
 // A lease belongs to the connection that acquired it, so Malachite keeps one connection for its life.
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -19,13 +19,22 @@ export function socketPath(env = process.env): string {
   return path.join(dir, "control.sock");
 }
 
-export function daemonPath(env = process.env): string | null {
+function daemonPath(env = process.env): string | null {
   if (env.PAPERBOATD) return env.PAPERBOATD;
   for (const dir of (env.PATH ?? "").split(path.delimiter)) {
     const p = path.join(dir, "paperboatd");
     try { fs.accessSync(p, fs.constants.X_OK); return p; } catch { /* next */ }
   }
   return null;
+}
+
+/** Paperboat's version for About (`paperboatd --version`, without starting it); null when it isn't installed. */
+export function paperboatVersion(): Promise<string | null> {
+  const d = daemonPath();
+  return new Promise((resolve) => {
+    if (!d) return resolve(null);
+    execFile(d, ["--version"], { timeout: 5000 }, (err, out) => resolve(err ? null : out.trim().split(/\s+/).pop() || null));
+  });
 }
 
 const connect = (sock: string) => new Promise<net.Socket>((resolve, reject) => {
