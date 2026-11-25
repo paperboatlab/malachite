@@ -5,6 +5,7 @@ author: lab
 project: tank-level
 kind: issue
 status: open
+due: 2026-11-30
 tags: [level-sensor, calibration]
 ---
 

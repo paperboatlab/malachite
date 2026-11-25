@@ -10,7 +10,7 @@ function Context({ text, self }: { text: string; self: string }) {
   const me = self.slice(self.lastIndexOf("/") + 1).replace(/\.md$/i, "").toLowerCase();
   return <p>{text.split(/(\[\[[^\]]+\]\])/).map((part, i) => {
     const m = /^\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]+))?\]\]$/.exec(part);
-    if (!m) return part;
+    if (!m) return part.replace(/(\*\*|__|\*|`)(.+?)\1/g, "$2");   // the line as read, not its Markdown marks
     const target = m[1].slice(m[1].lastIndexOf("/") + 1).replace(/\.md$/i, "").trim().toLowerCase();
     return target === me ? <mark key={i} className="me">{m[2] ?? m[1]}</mark> : <b key={i}>{m[2] ?? m[1]}</b>;
   })}</p>;

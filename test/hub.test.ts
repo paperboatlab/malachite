@@ -94,3 +94,19 @@ test("the server answers a missing file with 404 and stays up", async () => {
   assert.equal(await get("/api/hub"), 200);
   server.close();
 });
+
+test("a property is set on its own, logged, and refused on a sealed note", () => {
+  const v = new Hub(tmp());
+  const p = v.create("", "Card", "issue");
+  v.setProp(p, "status", "in progress");
+  const { props, body } = split(fs.readFileSync(v.resolve(p), "utf8"));
+  assert.equal(props.status, "in progress");
+  assert.match(body, /# Card/);
+  const ev = v.events(1)[0] as any;
+  assert.deepEqual([ev.action, ev.details.from, ev.details.to], ["note.property", "open", "in progress"]);
+  v.setProp(p, "status", "");
+  assert.equal(split(fs.readFileSync(v.resolve(p), "utf8")).props.status, undefined);
+  assert.throws(() => v.setProp(p, "sealed", "x"), /not a property/);
+  v.seal(p);
+  assert.throws(() => v.setProp(p, "status", "done"), /sealed/);
+});
