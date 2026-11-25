@@ -27,12 +27,12 @@ flowchart LR
 
 - `server/note.ts`: a note's parts: front matter (a YAML subset), title, tags, `[[links]]`, cells and
   their hashes. Pure functions.
-- `server/hub.ts`: `Hub`: its settings in `.malachite/hub.toml` (schema 2: id, name, author, created, keep,
-  ignore; a schema 1 `hub.toml` at the root moves there on open), set only through `set` (the Settings
+- `server/hub.ts`: `Hub`: its settings in `.malachite/hub.toml` (schema 3: id, name, author, created, keep,
+  ignore; a schema 1 `hub.toml` at the root moves there on open, a schema 2 root `log/` into `.malachite/log/`), set only through `set` (the Settings
   pane, `paperboat hub config`); every path through `resolve` (inside the hub, symlinks too), the tree,
   read/write (atomic), create (id, time, author set here), one property set (a board move), move, the trash (`.malachite/trash/<id>/` with `trashed.json`: list,
   restore beside a newcomer, delete for good, empty), seal, and
-  the activity log (`log/YYYY-MM.jsonl`).
+  the activity log (`.malachite/log/<machine>/YYYY-MM.jsonl`: a file per machine, so a sync never conflicts).
 - `server/hubs.ts`: the hubs this machine knows, `$PAPERBOAT_HOME/hubs.toml` (id, path, place): every
   app and the Launcher read it; a hub is found by its id, so a rename or a move keeps it.
   Cloud hubs v1 are synced folders, as in Obsidian: the provider's desktop app keeps the folder in sync,

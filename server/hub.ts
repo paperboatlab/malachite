@@ -1,5 +1,5 @@
 // The hub: the folder Malachite opens (pb#415). The files are the record; `.malachite/` is a cache
-// (the outputs of cells, the trash) and `log/` the activity log. Every path from the page goes through
+// (the outputs of cells, the trash, the activity log in `.malachite/log/<machine>/`). Every path from the page goes through
 // `resolve`, which keeps it inside the hub.
 import fs from "node:fs";
 import os from "node:os";
@@ -13,7 +13,11 @@ export type Trashed = { id: string; path: string; kind: "file" | "folder"; time:
 export class HubError extends Error { readonly status: number; constructor(message: string, status = 400) { super(message); this.status = status; } }
 
 const HIDDEN = new Set([".malachite", ".git", "node_modules", ".DS_Store"]);
-export const SCHEMA = 2;   // 1: hub.toml at the root; 2: .malachite/hub.toml, with an id (paperboat#16)
+export const SCHEMA = 3;   // 1: hub.toml at the root; 2: .malachite/hub.toml, with an id (paperboat#16); 3: the log in .malachite/log/
+const MONTH = /^\d{4}-\d{2}\.jsonl$/;
+
+/** This machine's name in the files only it writes (its log, its history bundle): its host name, made safe. */
+export const machine = () => (process.env.MALACHITE_MACHINE ?? os.hostname()).replace(/[^\w.-]+/g, "-") || "machine";
 export const KEEP = ["90d", "1y", "always"] as const;
 
 /** A hub's settings (`.malachite/hub.toml`): set from its Settings pane or `paperboat hub config`, never by hand. */
@@ -51,6 +55,7 @@ export class Hub {
       upgraded = true;
     }
     const c = fs.existsSync(file) ? readToml(fs.readFileSync(file, "utf8")) : {};
+    if (!fresh && Number(c.schema ?? 1) < 3 && this.moveOldLog()) upgraded = true;
     if (c.schema && Number(c.schema) > SCHEMA) throw new HubError(`this hub has schema ${c.schema}; this Malachite reads ${SCHEMA}. Update Malachite.`);
     this.conf = {
       id: c.id || newId("h"), name: c.name || path.basename(this.root), schema: SCHEMA, author: c.author || os.userInfo().username,
@@ -60,6 +65,22 @@ export class Hub {
     if (fresh || upgraded || !c.id || Number(c.schema) !== SCHEMA) this.save();
     if (fresh) this.log("hub.created");
     else if (upgraded) this.log("hub.upgraded", undefined, { schema: SCHEMA });
+  }
+
+  /** Schema 2 and before kept the log at the root (`log/YYYY-MM.jsonl`), in every file tree: into this machine's. */
+  private moveOldLog(): boolean {
+    const old = path.join(this.root, "log");
+    if (!fs.existsSync(old) || !fs.statSync(old).isDirectory()) return false;
+    const months = fs.readdirSync(old).filter((f) => MONTH.test(f));
+    if (!months.length) return false;
+    const to = path.join(this.root, ".malachite", "log", machine());
+    fs.mkdirSync(to, { recursive: true });
+    for (const f of months) {
+      if (fs.existsSync(path.join(to, f))) fs.appendFileSync(path.join(to, f), fs.readFileSync(path.join(old, f))), fs.rmSync(path.join(old, f));
+      else fs.renameSync(path.join(old, f), path.join(to, f));
+    }
+    if (!fs.readdirSync(old).length) fs.rmdirSync(old);   // the user's own files there stay
+    return true;
   }
 
   get id() { return this.conf.id; }
@@ -249,10 +270,11 @@ export class Hub {
     this.log("note.sealed", rel, { hash: `sha256:${hash}` });
   }
 
-  /** The append-only activity log: one writer (this), one line per event, a file per month. */
+  /** The append-only activity log: a file per machine and month, so two machines never write the same file
+   *  (a sync client would keep one and make a conflict copy of the other). */
   log(action: string, target?: string, details?: Record<string, unknown>) {
     const e: Event = { time: new Date().toISOString(), actor: this.author, action, ...(target ? { target } : {}), ...(details ? { details } : {}) };
-    const dir = path.join(this.root, "log");
+    const dir = path.join(this.root, ".malachite", "log", machine());
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, `${e.time.slice(0, 7)}.jsonl`), JSON.stringify(e) + "\n");
     this.onEvent(e);
@@ -260,14 +282,22 @@ export class Hub {
 
   /** The newest events first, optionally for one file. A damaged line is shown, not repaired. */
   events(limit = 200, target?: string): (Event | { damaged: string })[] {
-    const dir = path.join(this.root, "log");
+    const dir = path.join(this.root, ".malachite", "log");
     if (!fs.existsSync(dir)) return [];
+    const machines = fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+    const months = [...new Set(machines.flatMap((m) => fs.readdirSync(path.join(dir, m)).filter((f) => MONTH.test(f))))].sort().reverse();
     const out: (Event | { damaged: string })[] = [];
-    for (const f of fs.readdirSync(dir).filter((f) => /^\d{4}-\d{2}\.jsonl$/.test(f)).sort().reverse()) {
-      const lines = fs.readFileSync(path.join(dir, f), "utf8").split("\n").filter(Boolean).reverse();
-      for (const l of lines) {
-        let e: Event | { damaged: string };
-        try { e = JSON.parse(l); } catch { e = { damaged: `${f}: ${l.slice(0, 80)}` }; }
+    for (const f of months) {   // a month at a time: every machine's lines, newest first
+      const all: { t: string; e: Event | { damaged: string } }[] = [];
+      for (const m of machines.filter((m) => fs.existsSync(path.join(dir, m, f)))) {
+        let t = "";   // a damaged line sits where it was: at the time of the line before it
+        for (const l of fs.readFileSync(path.join(dir, m, f), "utf8").split("\n").filter(Boolean)) {
+          let e: Event | { damaged: string };
+          try { e = JSON.parse(l); t = (e as Event).time ?? t; } catch { e = { damaged: `${m}/${f}: ${l.slice(0, 80)}` }; }
+          all.push({ t, e });
+        }
+      }
+      for (const { e } of all.reverse().sort((a, b) => b.t.localeCompare(a.t))) {
         if (target && ("damaged" in e || e.target !== target)) continue;
         out.push(e);
         if (out.length >= limit) return out;
