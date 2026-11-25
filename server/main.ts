@@ -11,7 +11,8 @@ import { Control, ControlError, paperboatVersion } from "./control.ts";
 import { Index } from "./index.ts";
 import { bodyHash, parse, type Lang } from "./note.ts";
 import { NoSession, Sessions } from "./sessions.ts";
-import { Hub, HubError, SCHEMA } from "./hub.ts";
+import { Hub, HubError, SCHEMA, type HubKey } from "./hub.ts";
+import { defaultFolder, forget, infos, remember, tilde } from "./hubs.ts";
 
 export const DEFAULT_PORT = 59210;   // paperboat/apps.toml
 const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
@@ -27,6 +28,12 @@ const UPLOAD_MAX = 2 ** 31;   // 2 GiB: a video from a lab camera, not a disk im
 
 export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control()) {
   const hub = new Hub(hubDir);
+  remember(hub.id, hub.root);   // $PAPERBOAT_HOME/hubs.toml: every app's list of hubs
+  // while this serves the hub, `paperboat hub move` refuses to move it from under us
+  const serving = path.join(hub.root, ".malachite", "serving.pid");
+  fs.writeFileSync(serving, String(process.pid));
+  process.on("exit", () => { try { if (fs.readFileSync(serving, "utf8") === String(process.pid)) fs.rmSync(serving); } catch { /* gone */ } });
+  const hubInfo = () => ({ ...hub.conf, root: hub.root, shown: tilde(hub.root), place: "local" as const });
   const index = new Index(hub);
   index.build();
   const clients = new Set<http.ServerResponse>();
@@ -78,9 +85,28 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
       const body = req.method === "GET" ? {} : await json(req);
       const route = `${req.method} ${url.pathname}`;
       switch (route) {
-        case "GET /api/hub": return send(res, 200, { name: hub.name, root: hub.root, author: hub.author });
+        case "GET /api/hub": return send(res, 200, hubInfo());
+        case "POST /api/hub/config": { hub.set(String(body.key) as HubKey, String(body.value ?? "")); return send(res, 200, hubInfo()); }
         // About: the hub format and Paperboat's version (null: not installed); never starts paperboatd
         case "GET /api/about": return send(res, 200, { format: SCHEMA, paperboat: await paperboatVersion() });
+        case "GET /api/hubs": return send(res, 200, infos());
+        case "POST /api/hubs/remove": { forget(String(body.id)); return send(res, 200, {}); }
+        // another hub opens in its own Malachite (paperboat app open): one server per hub
+        case "POST /api/hubs/open": {
+          const h = infos().find((x) => x.id === body.id);
+          if (!h || h.missing) throw new HubError("can't find that hub's folder", 404);
+          return send(res, 200, await openHub(h.path));
+        }
+        case "POST /api/hubs/new": {
+          const name = String(body.name ?? "").trim();
+          if (!name || /[\\/"]/.test(name)) throw new HubError("a hub's name has no / \\ or quotes");
+          const dir = defaultFolder(name);
+          if (fs.existsSync(dir)) throw new HubError(`${dir} exists: pick another name`, 409);
+          fs.mkdirSync(dir, { recursive: true });
+          const made = new Hub(dir);
+          remember(made.id, made.root);
+          return send(res, 200, await openHub(made.root));
+        }
         case "GET /api/tree": return send(res, 200, hub.tree());
         case "GET /api/index": return send(res, 200, index.list());
         case "GET /api/note": {
@@ -184,6 +210,21 @@ function stream(res: http.ServerResponse, abs: string, headers: http.OutgoingHtt
   s.once("error", () => { if (!res.headersSent) send(res, 404, { error: "not found" }); else res.destroy(); });
 }
 
+/** Opens a hub in its own Malachite through the paperboat CLI; the page goes to the URL it answers. */
+function openHub(dir: string): Promise<{ url: string }> {
+  return new Promise((resolve, reject) => {
+    const p = spawn(process.env.PAPERBOAT ?? "paperboat", ["app", "open", "malachite", dir, "--no-open", "--json"], { stdio: ["ignore", "pipe", "pipe"] });
+    let out = "", err = "";
+    p.stdout.on("data", (d) => (out += d));
+    p.stderr.on("data", (d) => (err += d));
+    p.on("error", () => reject(new HubError("opening another hub needs the paperboat CLI on PATH", 501)));
+    p.on("close", (code) => {
+      try { if (code === 0) return resolve({ url: JSON.parse(out).url }); } catch { /* not JSON */ }
+      reject(new HubError(`paperboat app open: ${(err || out).trim() || `exit ${code}`}`, 502));
+    });
+  });
+}
+
 /** A file written from the request's bytes: to a temporary name, then renamed, so a cut-off upload leaves
  *  nothing half-written. `replace` sends what was there to the trash first (it can come back); otherwise
  *  a taken name becomes "<name> (2)". Returns the path written. */
@@ -215,7 +256,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(proces
   const port = pi >= 0 ? Number(args.splice(pi, 2)[1]) : Number(process.env.MALACHITE_PORT ?? DEFAULT_PORT);
   const dir = args[0];
   if (!dir || args.includes("--help") || args.includes("-h")) {
-    console.log("usage: malachite <hub folder> [--port N]\n  Opens the folder as a hub (hub.toml is written on first open) and serves it on 127.0.0.1.");
+    console.log("usage: malachite <hub folder> [--port N]\n  Opens the folder as a hub (.malachite/hub.toml on first open) and serves it on 127.0.0.1.\n       malachite hub …  the hubs this machine knows (paperboat hub …)");
     process.exit(dir ? 0 : 2);
   }
   fs.mkdirSync(dir, { recursive: true });

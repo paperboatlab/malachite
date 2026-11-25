@@ -9,11 +9,12 @@ import {
 import { DEFAULT_EDITOR_SETTINGS, Editor, TabMenu, afterClose, languageFor, livePreview, markdown, orderTabs, tabMenu, type Session } from "@paperboatlab/ui/editor";
 import { EditorView } from "@codemirror/view";
 import { FileTree, type FileEntry } from "@paperboatlab/ui/files";
+import { HubSelector, HubSettings, type Hub as KitHub } from "@paperboatlab/ui/hub";
 import { Plot2D, type PlotSeries } from "@paperboatlab/ui/plot";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { patch, split } from "../server/frontmatter.ts";
-import { api, listen, type Cell, type Entry, type Item, type Lang, type Links, type LogEvent, type NoteData, type Props, type Run } from "./api.ts";
+import { api, listen, type Cell, type HubConf, type KnownHub, type Entry, type Item, type Lang, type Links, type LogEvent, type NoteData, type Props, type Run } from "./api.ts";
 import { fileMenu, type FileActions } from "./fileMenu.ts";
 import { FileGlyph, OWNER, TEXT, mediaOf, typeOf } from "./files.tsx";
 import { MediaEmbed } from "./Media.tsx";
@@ -67,7 +68,9 @@ export function App() {
   const [theme, setTheme] = useState<Theme>(() => readStored("paperboat.theme", isTheme) ?? "system");
   const shown = useTheme(theme);
   const look: CodeLook = useMemo(() => ({ settings: { ...DEFAULT_EDITOR_SETTINGS, wrap: true }, appTheme: shown }), [shown]);
-  const [hub, setHub] = useState<{ name: string; root: string } | null>(null);
+  const [hub, setHub] = useState<HubConf | null>(null);
+  const [hubs, setHubs] = useState<KnownHub[]>([]);
+  const [settings, setSettings] = useState(false);
   const [tree, setTree] = useState<Entry[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [page, setPage] = useState<Page>("notes");
@@ -111,6 +114,7 @@ export function App() {
 
   const reload = useCallback(() => { api.tree().then(setTree, fail); api.index().then(setItems, fail); }, [fail]);
   useEffect(() => {
+    api.hubs().then(setHubs, () => setHubs([]));
     api.hub().then((v) => { setHub(v); document.title = `${v.name} · Malachite`; },
       (e) => show({ title: "Couldn't open the hub", detail: `${(e as Error).message ?? e} · the terminal running malachite says why`, state: "failed" }));
     reload();
@@ -407,7 +411,10 @@ export function App() {
       <header className="bar">
         <AppMark app="malachite" size={26} idle label="Malachite" />
         <span className="wm">Malachite</span>
-        <span className="well hub" title={hub?.root}><FileGlyph path="" dir />{hub?.name ?? "…"}</span>
+        {hub && <HubSelector app="Malachite" hub={kitHub({ ...hub, shown: hub.shown })} hubs={hubs.map(kitHub)}
+          onSwitch={(id) => api.hubOpen(id).then((r) => window.open(r.url, "_blank"), fail)}
+          onNew={() => setAsk({ title: "New hub", label: "Name", ok: "Create", note: "It goes in ~/Documents/paperboat and opens in a new window.",
+            run: (n) => n.trim() && api.hubNew(n.trim()).then((r) => { api.hubs().then(setHubs); window.open(r.url, "_blank"); }, fail) })} />}
         <span className="bend">
           {page === "notes" && <Key kind="primary" icon="new-file" onClick={() => newNote()}>New note</Key>}
           <RuntimesKey running={nRunning} version={peekVersion} />
@@ -423,7 +430,7 @@ export function App() {
         pages={[{ id: "notes", label: "Notes", icon: "a-notes", keys: "Alt+1", count: nRunning ? "live" : mdCount }, { id: "views", label: "Views", icon: "a-views", keys: "Alt+2" },
           { id: "graph", label: "Graph", icon: "a-trace", keys: "Alt+3" }, { id: "log", label: "Log", icon: "a-log", keys: "Alt+4" }]}
         foot={[{ id: "search", label: "Search", icon: "search", keys: "Ctrl+K" }, { id: "settings", label: "Settings", icon: "a-settings" }, { id: "help", label: "Help", icon: "question", keys: "F1" }]}
-        onFoot={(id) => { if (id === "search") setSearch(true); else if (id === "help") openAbout(); else show({ title: "Settings", detail: "Not in v0.1: the hub's settings are hub.toml." }); }} />
+        onFoot={(id) => { if (id === "search") setSearch(true); else if (id === "settings") setSettings(true); else openAbout(); }} />
 
       <main className="pages">
         {page === "notes" && (
@@ -520,6 +527,17 @@ export function App() {
       </main>
 
       {search && <Search items={searchItems} scopes={["All", "Notes", "Files", "Commands"]} placeholder={`Search ${hub?.name ?? "the hub"} or run a command`} onClose={() => setSearch(false)} />}
+      {settings && hub && (
+        <Dialog title="Settings" tags={["Hub", hub.name]} wide onClose={() => setSettings(false)}>
+          <HubSettings hub={kitHub({ ...hub, shown: hub.shown })} values={{ author: hub.author, keep: hub.keep, ignore: hub.ignore }}
+            onSet={(k, v) => api.hubSet(k as "author" | "keep" | "ignore", String(v)).then(setHub, fail)}
+            onRename={() => setAsk({ title: "Rename the hub", label: "Name", value: hub.name, ok: "Rename", note: "The folder keeps its name; apps show this one.",
+              run: (n) => n.trim() && api.hubSet("name", n.trim()).then((h) => { setHub(h); document.title = `${h.name} · Malachite`; api.hubs().then(setHubs); }, fail) })}
+            onMove={() => show({ title: "Move the hub", detail: `Close it first, then: paperboat hub move ${hub.name} <folder>` })}
+            onRemove={() => setAsk({ title: `Take ${hub.name} off the list?`, note: "Paperboat forgets it; the folder and its files stay. Opening it again adds it back.", danger: true, ok: "Remove from the list",
+              run: () => api.hubForget(hub.id).then(() => api.hubs().then(setHubs), fail) })} />
+        </Dialog>
+      )}
       {ask && <AskDialog ask={ask} onClose={() => setAsk(null)} />}
       {about && <About app="malachite" role="An engineering notebook: Markdown notes with Julia and Python cells" version={__VERSION__}
         paperboat={about.paperboat} repo="paperboatlab/malachite" credits={CREDITS} onClose={() => setAbout(null)}
@@ -528,6 +546,9 @@ export function App() {
     </div>
   );
 }
+
+/** A hub as the kit draws it. */
+const kitHub = (h: { id: string; name: string; shown: string; place: "local" | "google-drive"; missing?: boolean }): KitHub => ({ id: h.id, name: h.name, place: h.place, path: h.shown, missing: h.missing });
 
 /** A CSV's numeric columns against its first: what a run left behind, at a glance. */
 function CsvPlot({ text }: { text: string }) {

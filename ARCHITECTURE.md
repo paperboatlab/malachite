@@ -27,10 +27,16 @@ flowchart LR
 
 - `server/note.ts`: a note's parts: front matter (a YAML subset), title, tags, `[[links]]`, cells and
   their hashes. Pure functions.
-- `server/hub.ts`: `Hub`: every path through `resolve` (inside the hub, symlinks too), the tree,
+- `server/hub.ts`: `Hub`: its settings in `.malachite/hub.toml` (schema 2: id, name, author, created, keep,
+  ignore; a schema 1 `hub.toml` at the root moves there on open), set only through `set` (the Settings
+  pane, `paperboat hub config`); every path through `resolve` (inside the hub, symlinks too), the tree,
   read/write (atomic), create (id, time, author set here), one property set (a board move), move, the trash (`.malachite/trash/<id>/` with `trashed.json`: list,
   restore beside a newcomer, delete for good, empty), seal, and
   the activity log (`log/YYYY-MM.jsonl`).
+- `server/hubs.ts`: the hubs this machine knows, `$PAPERBOAT_HOME/hubs.toml` (id, path, place): every
+  app and the Launcher read it; a hub is found by its id, so a rename or a move keeps it.
+- `server/cli.ts`: `paperboat hub …` (through `commands.toml`, `bin/malachite hub …`): list, show, new,
+  add, rename, config, move, remove. `move` refuses a hub a Malachite serves (`.malachite/serving.pid`).
 - `server/index.ts`: `Index`: built from the files at start, updated by `fs.watch`; link resolution
   (path, name, the nearest of several), backlinks with their line.
 - `server/control.ts`: `Control`: one connection to `paperboatd` (started on demand, as the CLI does);
@@ -59,13 +65,14 @@ flowchart LR
 
 ## 3. Invariants
 
-1. **The files are the record.** The index and `.malachite/` can be deleted; they come back from the
-   files. Nothing lives only in the server's memory.
+1. **The files are the record.** The index and `.malachite/` (but its `hub.toml`, the hub's id and
+   settings) can be deleted; they come back from the files. Nothing lives only in the server's memory.
 2. **One writer for the log.** Every mutation through the API appends one event; the log is never
    rewritten. A damaged line is shown, not repaired.
 3. **Sealed is final.** A sealed note refuses writes (409); its body hash is in its front matter and the
    page says when the body no longer matches.
 4. **Paths stay in the hub.** Every path from the page goes through `Hub.resolve`.
+   Dot folders (`.malachite/` with `hub.toml`) never show in the tree (paperboat#16).
 5. **Malachite runs no code.** Cells run in runtimes leased from `paperboatd`; the server only speaks
    the protocols (paperboat ARCHITECTURE invariant 9).
 6. **Formats it doesn't own are not parsed.** A `.pst`, `.mo` or `.mx` is indexed by name and type until
