@@ -1,4 +1,9 @@
-# Paperboat Malachite
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/readme/banner-dark.gif">
+    <img src=".github/readme/banner-light.gif" width="413" alt="Paperboat Malachite">
+  </picture>
+</h1>
 
 An engineering notebook: notes, runs and results in one hub, with Julia and Python cells run by
 Paperboat's runtimes. Part of [Paperboat](https://github.com/paperboatlab/paperboat).
