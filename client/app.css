@@ -95,6 +95,9 @@ body { background: var(--surface-ground); color: var(--text); font: 13px/1.45 va
 .bl { all: unset; box-sizing: border-box; display: block; width: calc(100% - 16px); margin: 0 8px; padding: 7px 8px; border-radius: var(--radius-md); cursor: pointer; }
 .bl:hover { background: color-mix(in srgb, var(--surface-raised) 60%, transparent); }
 .bl div { display: flex; align-items: center; gap: 6px; }
+.bl p b { color: var(--text); font-weight: 500; }
+/* the mention of the open note: the deeper malachite (the app's own file colour), tinted behind */
+.bl p mark.me { color: var(--file-malachite); background: color-mix(in srgb, var(--file-malachite) 14%, transparent); font-weight: 600; border-radius: 3px; padding: 0 2px; }
 .bl p { margin: 3px 0 0 22px; font-size: 12px; color: var(--text-muted); line-height: 1.45; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .ol { margin: 0 8px; display: flex; flex-direction: column; }
 .ol button { all: unset; display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: var(--radius-sm); cursor: pointer; }
@@ -136,22 +139,4 @@ body { background: var(--surface-ground); color: var(--text); font: 13px/1.45 va
 .fplot { height: 300px; border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; background: var(--surface-raised); }
 .fplot > * { height: 100%; }
 
-/* Trace and the local graph: React Flow, nodes as cards with the kit's file icons */
-.trace { width: 100%; height: 100%; }
-.trace .react-flow__background { background: var(--surface-sunken); }
-.trace .react-flow__background circle, .trace .react-flow__background path { fill: var(--dots); }
-.trace .react-flow__edge-path { stroke: var(--line-strong); stroke-width: 1.25; }
-.trace .react-flow__edge.near .react-flow__edge-path { stroke: var(--line-ink); }
-.trace .react-flow__edge.back .react-flow__edge-path { stroke: var(--line-strong); stroke-dasharray: 3 3; opacity: 0.6; }
-.trace .react-flow__handle { width: 7px; height: 7px; min-width: 0; min-height: 0; background: var(--surface-raised); border: 1px solid var(--line-ink); }
-.trace .react-flow__controls { box-shadow: var(--shadow-1); border-radius: var(--radius-md); overflow: hidden; }
-.trace .react-flow__controls-button { background: var(--surface-raised); border-bottom: 1px solid var(--line); color: var(--text); fill: var(--text); }
-.trace .react-flow__minimap { background: var(--surface-panel); border: 1px solid var(--line); border-radius: var(--radius-sm); }
-.tnode { width: 190px; height: 52px; padding: 7px 10px; background: var(--surface-raised); border: 1px solid var(--line-strong); border-radius: var(--radius-md); display: flex; flex-direction: column; justify-content: center; gap: 2px; cursor: pointer; font-size: 12px; }
-.tnode .th { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.tnode b { font: 500 11.5px var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tnode small { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tnode.me { box-shadow: 0 0 0 2px var(--accent-select); border-color: transparent; cursor: default; }
-.tnode.small { width: 96px; height: 24px; padding: 0 6px; border-radius: 6px; }
-.tnode.small b { font: 400 11px var(--font-sans); }
 .lgraph { margin: 0 12px 8px; height: 214px; border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; }
