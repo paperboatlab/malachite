@@ -14,6 +14,10 @@ export type LogEvent = { time: string; actor: string; action: string; target?: s
 export type Links = { links: { link: string; path: string | null }[]; backlinks: { path: string; title: string; context: string }[]; history: LogEvent[] };
 export type Session = { id: string; runtime: string; backend: string; state: string; uptime_s?: number; idle_s?: number; stats: { cpu_percent: number; memory_bytes: number } | null; running: { note: string; since?: string }[] };
 export type Trashed = { id: string; path: string; kind: "file" | "folder"; time: string; actor: string };
+/** The open hub's settings (.malachite/hub.toml) and where it is. */
+export type HubConf = { id: string; name: string; schema: number; author: string; created: string; keep: "90d" | "1y" | "always"; ignore: string; root: string; shown: string; place: "local" | "google-drive" };
+/** A hub this machine knows ($PAPERBOAT_HOME/hubs.toml). */
+export type KnownHub = { id: string; path: string; shown: string; place: "local" | "google-drive"; name: string; missing?: boolean };
 export type Peek = { sessions: Session[]; runtimes: { name: string; version: string }[] };
 
 async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -25,7 +29,12 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
 const q = (p: string) => encodeURIComponent(p);
 
 export const api = {
-  hub: () => call<{ name: string; root: string; author: string }>("GET", "/api/hub"),
+  hub: () => call<HubConf>("GET", "/api/hub"),
+  hubs: () => call<KnownHub[]>("GET", "/api/hubs"),
+  hubSet: (key: "name" | "author" | "keep" | "ignore", value: string) => call<HubConf>("POST", "/api/hub/config", { key, value }),
+  hubOpen: (id: string) => call<{ url: string }>("POST", "/api/hubs/open", { id }),
+  hubNew: (name: string) => call<{ url: string }>("POST", "/api/hubs/new", { name }),
+  hubForget: (id: string) => call("POST", "/api/hubs/remove", { id }),
   tree: () => call<Entry[]>("GET", "/api/tree"),
   index: () => call<Item[]>("GET", "/api/index"),
   note: (p: string) => call<NoteData>("GET", `/api/note?path=${q(p)}`),

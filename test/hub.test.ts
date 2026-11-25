@@ -12,13 +12,17 @@ const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "malachite-"));
 test("opening a folder makes it a hub and logs it", () => {
   const dir = tmp();
   const v = new Hub(dir);
-  assert.match(fs.readFileSync(path.join(dir, "hub.toml"), "utf8"), /schema = 1/);
+  const conf = fs.readFileSync(path.join(dir, ".malachite", "hub.toml"), "utf8");
+  assert.match(conf, /schema = 2/);
+  assert.match(conf, /id = "h_/);
+  assert.ok(!fs.existsSync(path.join(dir, "hub.toml")));
   assert.equal(v.events()[0] && "action" in v.events()[0] ? (v.events()[0] as any).action : "", "hub.created");
 });
 
 test("a newer schema is refused with a clear message", () => {
   const dir = tmp();
-  fs.writeFileSync(path.join(dir, "hub.toml"), "schema = 99\n");
+  fs.mkdirSync(path.join(dir, ".malachite"));
+  fs.writeFileSync(path.join(dir, ".malachite", "hub.toml"), "schema = 99\n");
   assert.throws(() => new Hub(dir), /schema 99.*Update Malachite/);
 });
 
@@ -59,7 +63,7 @@ test("a damaged log line is shown, not dropped", () => {
 test("the tree hides the cache, git and dotfiles; folders first", () => {
   const v = new Hub(tmp());
   for (const f of [".malachite/out/x.json", ".git/HEAD", ".hidden", "b.md", "a/z.md"]) { fs.mkdirSync(path.dirname(path.join(v.root, f)), { recursive: true }); fs.writeFileSync(path.join(v.root, f), ""); }
-  assert.deepEqual(v.tree().map((e) => e.name), ["a", "log", "b.md", "hub.toml"]);
+  assert.deepEqual(v.tree().map((e) => e.name), ["a", "log", "b.md"]);
 });
 
 test("the index resolves links and finds backlinks with their context", () => {
@@ -155,4 +159,28 @@ test("media: byte ranges for seeking; uploads never overwrite (a replaced file g
   assert.equal((await fetch(`${base}/api/upload?path=.malachite/x.png`, { method: "POST", body: "x", headers: { origin: base } })).status, 400);
   assert.ok(!fs.readdirSync(hub.resolve("media")).some((f) => f.endsWith(".tmp")));
   server.close();
+});
+
+test("a schema 1 hub moves its settings out of sight, keeps them, and gets an id", () => {
+  const dir = tmp();
+  fs.writeFileSync(path.join(dir, "hub.toml"), 'name = "tank-lab"\nschema = 1\nauthor = "lab"\ncreated = "2026-11-17T13:00:00Z"\n');
+  const v = new Hub(dir);
+  assert.ok(!fs.existsSync(path.join(dir, "hub.toml")));
+  assert.equal(v.name, "tank-lab");
+  assert.equal(v.author, "lab");
+  assert.equal(v.conf.created, "2026-11-17T13:00:00Z");
+  assert.match(v.id, /^h_/);
+  assert.equal(new Hub(dir).id, v.id, "the id stays");
+  assert.ok(v.events().some((e) => "action" in e && e.action === "hub.upgraded"));
+});
+
+test("settings are set, checked and logged", () => {
+  const v = new Hub(tmp());
+  v.set("keep", "1y");
+  v.set("author", "ana");
+  assert.equal(new Hub(v.root).conf.keep, "1y");
+  assert.equal(new Hub(v.root).author, "ana");
+  assert.throws(() => v.set("keep", "forever"), /keep is one of/);
+  assert.throws(() => v.set("name", ""), /can't be empty/);
+  assert.throws(() => v.set("id" as never, "x"), /not a hub setting/);
 });
