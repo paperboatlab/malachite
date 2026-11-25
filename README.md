@@ -15,6 +15,8 @@ hub's session through `paperboatd`. Every change lands in an append-only log; a 
 **Status:** v0.1, the first app on the new platform. Runs, the Log page and Settings come next; Julix's plots and
 the other apps' embeds when those apps are rebuilt.
 
+**Docs:** <https://paperboatlab.github.io/apps/malachite/> (sources in [`docs/`](docs/))
+
 **Design:** [ARCHITECTURE.md](ARCHITECTURE.md) · **Spec:** pb#415 (paperboat-legacy) · **Look:**
 [@paperboatlab/ui](https://github.com/paperboatlab/paperboat-ui) and the rebrand mockup
 (`agent-docs/rebrand/apps/malachite`)
@@ -23,6 +25,7 @@ the other apps' embeds when those apps are rebuilt.
 
 ```text
 server/       the app server (Node 22, TypeScript, no dependencies): hub, index, sessions, the API
+docs/         the manual (reStructuredText)
 client/       the page (React, @paperboatlab/ui: tree, editor, plot, canvas; React Flow, marked), built into dist/
 bin/malachite the command
 examples/     tank-lab, a hub to try it on
