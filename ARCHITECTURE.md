@@ -87,3 +87,5 @@ flowchart LR
 7. **Local only.** The server listens on 127.0.0.1 and answers only its own Host and Origin.
 8. **A note's text is not trusted as HTML.** Raw HTML in Markdown is shown as text, links go to
    http(s), mailto or the hub, and runtime HTML output is shown as its text.
+
+9. **No Git inside a hub.** No `.git` in the folder, no Git word on the page: versions and Restore.
