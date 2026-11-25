@@ -35,8 +35,14 @@ flowchart LR
   the activity log (`log/YYYY-MM.jsonl`).
 - `server/hubs.ts`: the hubs this machine knows, `$PAPERBOAT_HOME/hubs.toml` (id, path, place): every
   app and the Launcher read it; a hub is found by its id, so a rename or a move keeps it.
+- `server/history.ts`: `History`: Git underneath, never shown. The Git folder lives outside the hub
+  (`$PAPERBOAT_HOME/hubs/<id>/git`, work tree = the hub); a version a few seconds after files change
+  (described in words), `versions` (the hub's or one file's), `restore` (the version before is kept);
+  this machine's history packed in `.malachite/history/<machine>.bundle` (every few minutes and on
+  close, written whole then renamed) and every other machine's bundle merged in on open (their past,
+  the files as they are).
 - `server/cli.ts`: `paperboat hub …` (through `commands.toml`, `bin/malachite hub …`): list, show, new,
-  add, rename, config, move, remove. `move` refuses a hub a Malachite serves (`.malachite/serving.pid`).
+  add, rename, config, move, history, restore, remove. `move` refuses a hub a Malachite serves (`.malachite/serving.pid`).
 - `server/index.ts`: `Index`: built from the files at start, updated by `fs.watch`; link resolution
   (path, name, the nearest of several), backlinks with their line.
 - `server/control.ts`: `Control`: one connection to `paperboatd` (started on demand, as the CLI does);
@@ -66,7 +72,8 @@ flowchart LR
 ## 3. Invariants
 
 1. **The files are the record.** The index and `.malachite/` (but its `hub.toml`, the hub's id and
-   settings) can be deleted; they come back from the files. Nothing lives only in the server's memory.
+   settings, and `history/`, the versions) can be deleted; they come back from the files.
+6. **No Git inside a hub.** No `.git` in the folder, no Git word on the page: versions and Restore. Nothing lives only in the server's memory.
 2. **One writer for the log.** Every mutation through the API appends one event; the log is never
    rewritten. A damaged line is shown, not repaired.
 3. **Sealed is final.** A sealed note refuses writes (409); its body hash is in its front matter and the
@@ -80,3 +87,5 @@ flowchart LR
 7. **Local only.** The server listens on 127.0.0.1 and answers only its own Host and Origin.
 8. **A note's text is not trusted as HTML.** Raw HTML in Markdown is shown as text, links go to
    http(s), mailto or the hub, and runtime HTML output is shown as its text.
+
+9. **No Git inside a hub.** No `.git` in the folder, no Git word on the page: versions and Restore.
