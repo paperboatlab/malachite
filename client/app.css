@@ -149,7 +149,7 @@ a.wl.miss, .wl.miss { color: var(--text-muted); text-decoration-style: dashed; }
 .note .edit { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .note .edit .pb-editor { flex: 1; }
 /* Live reads like Read: no gutter, the note's column and type, links in the deeper malachite */
-.note .edit.live { --link-live: var(--file-malachite); }
+.note .edit.live .cm-live .cm-lp-link { color: var(--file-malachite); }
 /* the note's own editor only (> each step), not a cell's small editor drawn inside it */
 .livecol > .pb-editor > .cm-editor > .cm-scroller { overflow: visible; font-family: var(--font-sans) !important; font-size: 14.5px !important; line-height: 1.65 !important; }
 .livecol > .pb-editor > .cm-editor > .cm-scroller > .cm-gutters { display: none; }
@@ -157,6 +157,7 @@ a.wl.miss, .wl.miss { color: var(--text-muted); text-decoration-style: dashed; }
 .livecol > .pb-editor > .cm-editor > .cm-scroller > .cm-content > .cm-line { padding: 0; }
 .livecol > .pb-editor > .cm-editor > .cm-scroller > .cm-content > .cm-activeLine { background: transparent; }
 .livecol > .pb-editor > .cm-editor.cm-focused { outline: none; }
+.livecol > .pb-editor > .cm-editor, .livecol > .pb-editor > .cm-editor > .cm-scroller { background: transparent; }   /* on the page, as Read; a cell keeps its theme */
 /* one scrolling column, as Read: the properties, then the text growing with its content */
 .note .edit.live { overflow: auto; display: block; }
 .livecol { max-width: 760px; margin: 0 auto; padding: 28px 40px 80px; }

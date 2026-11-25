@@ -1,5 +1,5 @@
 // The Graph page and the Links card's local graph: the kit's note graph (Obsidian's) over the hub's links.
-// Notes are grey dots, other files carry their type's colour; the open note has the ring.
+// Every node shows its file type (icon and colour, as the file tree); the open note has the ring.
 import { NoteGraph, type GraphNode } from "@paperboatlab/ui/graph";
 import { fileIconFor } from "@paperboatlab/ui/files";
 import "@xyflow/react/dist/base.css";
@@ -32,7 +32,8 @@ export function HubGraph({ focus, links, items, local = false, onOpen }: {
       : { nodes: [...new Set([...items.filter((i) => i.type === "md").map((i) => i.path), ...links.map((l) => l.to)])], links };
     const nodes: GraphNode[] = g.nodes.map((p) => {
       const it = byPath.get(p), name = p.slice(p.lastIndexOf("/") + 1);
-      return it?.type === "md" ? { id: p, label: it.title } : { id: p, label: name, tone: fileIconFor(name, "file").tone, missing: !it };
+      const { icon, tone } = fileIconFor(name, "file");   // as the file tree draws it
+      return { id: p, label: it?.type === "md" ? it.title : name, icon, tone, missing: !it };
     });
     return { nodes, edges: g.links.map((l) => ({ source: l.from, target: l.to })) };
   }, [focus, links, items, local]);
