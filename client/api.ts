@@ -35,6 +35,7 @@ export const api = {
   hubOpen: (id: string) => call<{ url: string }>("POST", "/api/hubs/open", { id }),
   hubNew: (name: string) => call<{ url: string }>("POST", "/api/hubs/new", { name }),
   hubForget: (id: string) => call("POST", "/api/hubs/remove", { id }),
+  about: () => call<{ format: number; paperboat: string | null }>("GET", "/api/about"),
   tree: () => call<Entry[]>("GET", "/api/tree"),
   index: () => call<Item[]>("GET", "/api/index"),
   note: (p: string) => call<NoteData>("GET", `/api/note?path=${q(p)}`),

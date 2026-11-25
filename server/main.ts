@@ -7,11 +7,11 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Control, ControlError } from "./control.ts";
+import { Control, ControlError, paperboatVersion } from "./control.ts";
 import { Index } from "./index.ts";
 import { bodyHash, parse, type Lang } from "./note.ts";
 import { NoSession, Sessions } from "./sessions.ts";
-import { Hub, HubError, type HubKey } from "./hub.ts";
+import { Hub, HubError, SCHEMA, type HubKey } from "./hub.ts";
 import { defaultFolder, forget, infos, remember, tilde } from "./hubs.ts";
 
 export const DEFAULT_PORT = 59210;   // paperboat/apps.toml
@@ -87,6 +87,8 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
       switch (route) {
         case "GET /api/hub": return send(res, 200, hubInfo());
         case "POST /api/hub/config": { hub.set(String(body.key) as HubKey, String(body.value ?? "")); return send(res, 200, hubInfo()); }
+        // About: the hub format and Paperboat's version (null: not installed); never starts paperboatd
+        case "GET /api/about": return send(res, 200, { format: SCHEMA, paperboat: await paperboatVersion() });
         case "GET /api/hubs": return send(res, 200, infos());
         case "POST /api/hubs/remove": { forget(String(body.id)); return send(res, 200, {}); }
         // another hub opens in its own Malachite (paperboat app open): one server per hub
