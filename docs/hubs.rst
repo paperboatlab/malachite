@@ -15,7 +15,7 @@ file by hand. A ``hub.toml`` at the hub's root (schema 1) moves into ``.malachit
 opens.
 
 ``.malachite/`` holds ``hub.toml`` and ``history/``; the rest of it (``out/``, ``trash/``) can be
-deleted.
+deleted while no Malachite has the hub open (``serving.pid`` tells ``hub move`` that one does).
 
 The hubs on this machine
 ------------------------
