@@ -7,12 +7,12 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Control, ControlError } from "./control.ts";
+import { Control, ControlError, paperboatVersion } from "./control.ts";
 import { Index } from "./index.ts";
 import { bodyHash, parse, type Lang } from "./note.ts";
 import { NoSession, Sessions } from "./sessions.ts";
 import { History } from "./history.ts";
-import { Hub, HubError, type HubKey } from "./hub.ts";
+import { Hub, HubError, SCHEMA, type HubKey } from "./hub.ts";
 import { defaultFolder, forget, infos, remember, tilde } from "./hubs.ts";
 
 export const DEFAULT_PORT = 59210;   // paperboat/apps.toml
@@ -44,9 +44,9 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
   const saveSoon = () => {   // a version a few seconds after the last change; the bundle every few minutes
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      try { if (history.save() && !packTimer) packTimer = setTimeout(() => { packTimer = undefined; pack(); }, 5 * 60_000); }
+      try { if (history.save() && !packTimer) packTimer = setTimeout(() => { packTimer = undefined; pack(); }, 5 * 60_000).unref(); }
       catch (e) { console.error(`malachite: history: ${(e as Error).message}`); }
-    }, 3000);
+    }, 3000).unref();   // never what keeps the process up: closing saves and packs anyway
   };
   process.on("exit", () => { clearTimeout(saveTimer); try { history.save(); history.pack(); } catch { /* the next open saves it */ } });
   const index = new Index(hub);
@@ -110,6 +110,8 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
           for (const f of hub.files()) index.update(f);
           return send(res, 200, { id });
         }
+        // About: the hub format and Paperboat's version (null: not installed); never starts paperboatd
+        case "GET /api/about": return send(res, 200, { format: SCHEMA, paperboat: await paperboatVersion() });
         case "GET /api/hubs": return send(res, 200, infos());
         case "POST /api/hubs/remove": { forget(String(body.id)); return send(res, 200, {}); }
         // another hub opens in its own Malachite (paperboat app open): one server per hub

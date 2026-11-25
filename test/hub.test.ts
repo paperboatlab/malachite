@@ -8,6 +8,8 @@ import { split } from "../server/note.ts";
 import { Hub } from "../server/hub.ts";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "malachite-"));
+// a Paperboat home of their own: serving a hub records it in hubs.toml and keeps its history there
+process.env.PAPERBOAT_HOME = tmp();
 
 test("opening a folder makes it a hub and logs it", () => {
   const dir = tmp();

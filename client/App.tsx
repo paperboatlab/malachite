@@ -3,8 +3,8 @@
 // slim bars. The parts are the kit's (@paperboatlab/ui): the file tree, the editor and its languages, the
 // plot, the canvas layout; Malachite brings the hub, its notes and cells. Files are the record.
 import {
-  AppMark, Dialog, Icon, Key, Menu, Notifications, Panel, PanelsKey, Rail, Search, Segmented, ThemePicker, Toasts, chordMatches, readStored, typing, useTheme, useToasts, writeStored,
-  type MenuEntry, type SearchItem, type Theme,
+  About, AppMark, Dialog, Icon, Key, Menu, Notifications, Panel, PanelsKey, Rail, Search, Segmented, ThemePicker, Toasts, chordMatches, readStored, typing, useTheme, useToasts, writeStored,
+  type Credit, type MenuEntry, type SearchItem, type Theme,
 } from "@paperboatlab/ui";
 import { DEFAULT_EDITOR_SETTINGS, Editor, TabMenu, afterClose, languageFor, livePreview, markdown, orderTabs, tabMenu, type Session } from "@paperboatlab/ui/editor";
 import { EditorView } from "@codemirror/view";
@@ -24,6 +24,10 @@ import { Ev, LinksCard, RuntimesKey } from "./Side.tsx";
 import { HubGraph, hubLinks } from "./Graph.tsx";
 import { ViewsPage } from "./Views.tsx";
 import { TrashList } from "./Trash.tsx";
+
+declare const __VERSION__: string, __COMMIT__: string;   // scripts/build.ts
+/** What Malachite ships beyond the kit (the kit names its own: React, CodeMirror, the canvas…). */
+const CREDITS: Credit[] = [["marked", "Markdown", "MIT", "https://marked.js.org"]];
 
 type Page = "notes" | "views" | "graph" | "log";
 type Mode = "read" | "live" | "edit";
@@ -93,6 +97,7 @@ export function App() {
   const [log, setLog] = useState<LogEvent[]>([]);
   const [search, setSearch] = useState(false);
   const [ask, setAsk] = useState<Ask | null>(null);
+  const [about, setAbout] = useState<{ format?: number; paperboat?: string | null } | null>(null);
   const notes = useToasts();
   const { toasts, show, dismiss } = notes;
   const fail = useCallback((e: unknown) => show({ title: "Couldn't do that", detail: String((e as Error).message ?? e), state: "failed" }), [show]);
@@ -377,6 +382,9 @@ export function App() {
     return () => removeEventListener("keydown", on);
   }, [newNote]);
 
+  // About asks the server for the hub format and Paperboat's version as it opens
+  const openAbout = () => { setAbout({}); api.about().then((r) => setAbout((a) => a && r), () => {}); };
+
   const searchItems: SearchItem[] = useMemo(() => [
     ...items.filter((i) => i.type === "md").map((i): SearchItem => ({ id: `n:${i.path}`, label: i.title, detail: i.path, group: "Notes", scope: "Notes", icon: "markdown", run: () => open(i.path) })),
     ...items.filter((i) => i.type !== "md").map((i): SearchItem => ({ id: `f:${i.path}`, label: nameOf(i.path), detail: dirOf(i.path), group: "Files", scope: "Files", icon: "file", run: () => open(i.path) })),
@@ -390,6 +398,7 @@ export function App() {
     { id: "c:py", label: "Restart the Python session", group: "Commands", scope: "Commands", icon: "debug-restart", run: () => { api.restart("python").catch(fail); } },
     { id: "c:edit", label: mode === "edit" ? "Back to Live" : "Edit the Markdown", group: "Commands", scope: "Commands", icon: "command", disabled: !note, why: "Open a note first", run: () => setMode((m) => (m === "edit" ? "live" : "edit")) },
     ...noteMenu().flatMap((m): SearchItem[] => (typeof m === "object" && "run" in m ? [{ id: `c:${m.id}`, label: m.label, group: "Commands", scope: "Commands", icon: "add", disabled: !note || mode === "read" || m.disabled, why: !note ? "Open a note first" : mode === "read" ? "Switch to Live or Edit" : m.why, run: m.run }] : [])),
+    { id: "h:about", label: "About Malachite", group: "Help", scope: "Commands", icon: "info", run: () => openAbout() },
     ...(["notes", "views", "graph", "log"] as Page[]).map((p, i): SearchItem => ({ id: `g:${p}`, label: `Go to ${p[0].toUpperCase()}${p.slice(1)}`, shortcut: `Alt ${i + 1}`, group: "Commands", scope: "Commands", icon: "go", run: () => setPage(p) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [items, note, mode, open, newNote, fail]);
@@ -422,7 +431,7 @@ export function App() {
         pages={[{ id: "notes", label: "Notes", icon: "a-notes", keys: "Alt+1", count: nRunning ? "live" : mdCount }, { id: "views", label: "Views", icon: "a-views", keys: "Alt+2" },
           { id: "graph", label: "Graph", icon: "a-trace", keys: "Alt+3" }, { id: "log", label: "Log", icon: "a-log", keys: "Alt+4" }]}
         foot={[{ id: "search", label: "Search", icon: "search", keys: "Ctrl+K" }, { id: "settings", label: "Settings", icon: "a-settings" }, { id: "help", label: "Help", icon: "question", keys: "F1" }]}
-        onFoot={(id) => { if (id === "search") setSearch(true); else if (id === "settings") setSettings(true); else show({ title: "Help", detail: "Not in v0.1: the guide is the README." }); }} />
+        onFoot={(id) => { if (id === "search") setSearch(true); else if (id === "settings") setSettings(true); else openAbout(); }} />
 
       <main className="pages">
         {page === "notes" && (
@@ -533,6 +542,9 @@ export function App() {
         </Dialog>
       )}
       {ask && <AskDialog ask={ask} onClose={() => setAsk(null)} />}
+      {about && <About app="malachite" role="An engineering notebook: Markdown notes with Julia and Python cells" version={__VERSION__}
+        paperboat={about.paperboat} repo="paperboatlab/malachite" credits={CREDITS} onClose={() => setAbout(null)}
+        info={[about.format && `hub format ${about.format}`, __COMMIT__ && `commit ${__COMMIT__}`].filter(Boolean).join(" · ") || undefined} />}
       <Toasts toasts={toasts} onDismiss={dismiss} />
     </div>
   );

@@ -38,6 +38,7 @@ export const api = {
   hubForget: (id: string) => call("POST", "/api/hubs/remove", { id }),
   versions: (p: string) => call<{ ok: boolean; versions: Version[] }>("GET", `/api/versions?path=${q(p)}`),
   restoreVersion: (id: string, p: string) => call<{ id: string | null }>("POST", "/api/versions/restore", { id, path: p }),
+  about: () => call<{ format: number; paperboat: string | null }>("GET", "/api/about"),
   tree: () => call<Entry[]>("GET", "/api/tree"),
   index: () => call<Item[]>("GET", "/api/index"),
   note: (p: string) => call<NoteData>("GET", `/api/note?path=${q(p)}`),

@@ -13,7 +13,7 @@ export type Trashed = { id: string; path: string; kind: "file" | "folder"; time:
 export class HubError extends Error { readonly status: number; constructor(message: string, status = 400) { super(message); this.status = status; } }
 
 const HIDDEN = new Set([".malachite", ".git", "node_modules", ".DS_Store"]);
-const SCHEMA = 2;   // 1: hub.toml at the root; 2: .malachite/hub.toml, with an id (paperboat#16)
+export const SCHEMA = 2;   // 1: hub.toml at the root; 2: .malachite/hub.toml, with an id (paperboat#16)
 export const KEEP = ["90d", "1y", "always"] as const;
 
 /** A hub's settings (`.malachite/hub.toml`): set from its Settings pane or `paperboat hub config`, never by hand. */
