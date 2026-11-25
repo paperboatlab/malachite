@@ -49,7 +49,15 @@ export const api = {
   restart: (lang: Lang) => call("POST", "/api/restart", { lang }),
   runtimes: () => call<Peek>("GET", "/api/runtimes"),
   ask: (lang: Lang, op: string, args: Record<string, unknown>) => call<unknown>("POST", "/api/ask", { lang, op, args }),
-  raw: (p: string) => `/api/raw?path=${q(p)}`,
+  /** A file's bytes; `v` (its mtime) makes a changed file load again. */
+  raw: (p: string, v?: number) => `/api/raw?path=${q(p)}${v ? `&v=${Math.round(v)}` : ""}`,
+  /** Bytes into the hub: a new file gets a free name; `replace` sends the old one to the trash first. */
+  upload: async (p: string, body: Blob, replace = false) => {
+    const r = await fetch(`/api/upload?path=${q(p)}${replace ? "&replace=1" : ""}`, { method: "POST", body });
+    const j = await r.json().catch(() => ({ error: r.statusText }));
+    if (!r.ok) throw new Error(j.error ?? r.statusText);
+    return j as { path: string };
+  },
 };
 
 /** Server-Sent Events: files, cells, runtimes, the log. Reconnects by itself (EventSource does). */

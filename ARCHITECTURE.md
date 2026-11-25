@@ -41,11 +41,14 @@ flowchart LR
   language, run in their note's folder, and their outputs are written to
   `.malachite/out/<note id>/<cell hash>.json` with the runtime, image digest and backend that made them.
   Interrupt goes through the daemon (SIGINT); no answer within 3 s restarts the session.
-- `server/main.ts`: the HTTP server: the page from `dist/`, the JSON API, Server-Sent Events.
+- `server/main.ts`: the HTTP server: the page from `dist/`, the JSON API, Server-Sent Events, a file's bytes
+  with byte ranges (a video seeks), and uploads (to a temporary name, then renamed; a replaced file goes to
+  the trash, a taken name becomes "<name> (2)").
 - `client/`: `App.tsx` (the shell: bar, rail, cards, tabs, search, dialogs; a note as Read, Live (the kit
   editor with its `livePreview`, a cell's Run key saving then running it) or Edit; files that aren't notes, a CSV
   plotted), `Note.tsx` (properties, the Read view, cells and outputs), `fileMenu.ts` (the brand file menu
-  for the kit's tree), `Graph.tsx` (the hub graph and the local graph, the kit's note graph), `Trash.tsx` (the hub card's trash), `Views.tsx` and `views.ts`
+  for the kit's tree), `Graph.tsx` (the hub graph and the local graph, the kit's note graph), `Trash.tsx` (the hub card's trash), `Media.tsx` (pictures, videos, sounds: the kit's player and image
+  editor; Read draws them into `.media-slot`s, Live through the kit's `embeds`), `Views.tsx` and `views.ts`
   (board, list, timeline over `views/*.toml`), `Side.tsx` (the Links card, the
   runtimes key and its peek), `markdown.ts` (marked with wikilinks and embeds), `files.tsx`, `api.ts`.
 - **From the kit** (`@paperboatlab/ui`): the shell's parts (Rail, Panel, PanelsKey, Search, Menu, Dialog,

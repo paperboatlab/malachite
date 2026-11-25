@@ -5,7 +5,12 @@ import { fileIconFor } from "@paperboatlab/ui/files";
 
 /** Which app owns a type, for "Open in" and embeds. None is installed on the new platform yet. */
 export const OWNER: Record<string, string> = { pst: "Simplicial", psf: "Simplicial", mo: "Articula", fmu: "Articula", jl: "Julix", mx: "Julix" };
-export const IMAGE = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp"]);
+export const IMAGE = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "avif", "bmp"]);
+export const VIDEO = new Set(["mp4", "m4v", "webm", "mov", "ogv"]);
+export const AUDIO = new Set(["mp3", "m4a", "wav", "ogg", "oga", "flac"]);
+/** Pictures the image editor writes back in their own type (an SVG or a GIF isn't edited: it would flatten). */
+export const EDITABLE: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp" };
+export const mediaOf = (p: string): "image" | "video" | "audio" | null => { const t = typeOf(p); return IMAGE.has(t) ? "image" : VIDEO.has(t) ? "video" : AUDIO.has(t) ? "audio" : null; };
 export const TEXT = new Set(["md", "txt", "toml", "json", "jsonl", "csv", "tsv", "jl", "py", "mo", "yaml", "yml", "log"]);
 
 export const typeOf = (p: string) => { const n = p.slice(p.lastIndexOf("/") + 1); return n.includes(".") ? n.slice(n.lastIndexOf(".") + 1).toLowerCase() : ""; };

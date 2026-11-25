@@ -7,7 +7,7 @@ import {
   type MenuEntry, type SearchItem, type Theme,
 } from "@paperboatlab/ui";
 import { DEFAULT_EDITOR_SETTINGS, Editor, languageFor, livePreview, markdown, type Session } from "@paperboatlab/ui/editor";
-import type { EditorView } from "@codemirror/view";
+import { EditorView } from "@codemirror/view";
 import { FileTree, type FileEntry } from "@paperboatlab/ui/files";
 import { Plot2D, type PlotSeries } from "@paperboatlab/ui/plot";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -15,7 +15,8 @@ import { createPortal } from "react-dom";
 import { patch, split } from "../server/frontmatter.ts";
 import { api, listen, type Cell, type Entry, type Item, type Lang, type Links, type LogEvent, type NoteData, type Props, type Run } from "./api.ts";
 import { fileMenu, type FileActions } from "./fileMenu.ts";
-import { FileGlyph, IMAGE, OWNER, TEXT, typeOf } from "./files.tsx";
+import { FileGlyph, OWNER, TEXT, mediaOf, typeOf } from "./files.tsx";
+import { MediaEmbed } from "./Media.tsx";
 import { CellView, PropsEditor, ReadView, type CodeLook } from "./Note.tsx";
 import { valuesIn } from "./views.ts";
 import { Ev, LinksCard, RuntimesKey } from "./Side.tsx";
@@ -74,6 +75,7 @@ export function App() {
   const [plain, setPlain] = useState<string | null>(null);   // a text file that isn't a note
   const [mode, setMode] = useState<Mode>("live");
   const [cellEls, setCellEls] = useState<{ el: HTMLElement; lang: string; code: string }[]>([]);
+  const [embedEls, setEmbedEls] = useState<{ el: HTMLElement; target: string; alt: string; wiki: boolean }[]>([]);
   const [ctx, setCtx] = useState<{ x: number; y: number; at: number | null } | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [links, setLinks] = useState<Links | null>(null);
@@ -240,7 +242,60 @@ export function App() {
       mount: (el, c) => setCellEls((l) => [...l, { el, ...c }]),
       unmount: (el) => setCellEls((l) => l.filter((x) => x.el !== el)),
     },
+    embeds: {
+      mount: (el, e) => setEmbedEls((l) => [...l, { el, ...e }]),
+      unmount: (el) => setEmbedEls((l) => l.filter((x) => x.el !== el)),
+    },
   }), []);
+
+  /** A picture, a video or a sound, wherever a note embeds one (Read, Live) and in the file view. */
+  const mediaFor = (path: string | null, alt: string) => (
+    <MediaEmbed path={path} alt={alt} version={path ? items.find((i) => i.path === path)?.mtime : undefined} fail={fail}
+      onSaved={(p) => { reload(); show({ title: "Saved", detail: `${p} · the original is in the trash`, state: "done" }); }} />
+  );
+  /** An embed as Live found it: a wikilink's target resolved, a Markdown path from the note's folder. */
+  const embedPath = (target: string, wiki: boolean) => (wiki ? resolve(target) : /^[a-z][\w+.-]*:/i.test(target) ? null : resolve(normalise(current ? `${dirOf(current)}/${decodeURI(target)}` : decodeURI(target))));
+
+  // files dropped or pasted into a note: uploaded beside it, embedded on the line where they fell
+  const dropAct = useRef(async (_files: File[], _at: number | null) => {});
+  dropAct.current = async (files, at) => {
+    const v = liveView.current;
+    if (!v || !current || note?.sealed) return;
+    const dir = dirOf(current), stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-"), lines: string[] = [];
+    show({ id: 9001, title: `Adding ${files.length === 1 ? files[0].name || "a file" : `${files.length} files`}`, state: "working" });
+    try {
+      for (const [i, f] of files.entries()) {
+        const ext = f.name.includes(".") ? "" : `.${(f.type.split("/")[1] ?? "bin").replace("jpeg", "jpg").replace(/\W.*/, "")}`;
+        const name = !f.name || f.name === "image.png" ? `pasted-${stamp}${files.length > 1 ? `-${i + 1}` : ""}.${f.type.split("/")[1]?.replace("jpeg", "jpg") ?? "png"}` : f.name + ext;
+        const r = await api.upload(dir ? `${dir}/${name}` : name, f);
+        const short = nameOf(r.path), clash = items.some((x) => x.path !== r.path && nameOf(x.path) === short);
+        lines.push(`${mediaOf(r.path) ? "!" : ""}[[${clash ? r.path : short}]]`);
+      }
+      const text0 = v.state.doc.toString(), front = text0.length - split(text0).body.length;
+      const want = at ?? v.state.selection.main.head, line = v.state.doc.lineAt(want < front ? v.state.doc.length : want);
+      const insert = `${line.text.trim() ? "\n" : ""}${lines.join("\n")}\n`;
+      v.dispatch({ changes: { from: line.to, insert }, selection: { anchor: line.to + insert.length } });
+      reload();
+      show({ id: 9001, title: `Added ${lines.length === 1 ? "a file" : `${lines.length} files`}`, detail: dir || "the hub's root", state: "done" });
+    } catch (e) { show({ id: 9001, title: "Couldn't add it", detail: String((e as Error).message ?? e), state: "failed" }); }
+  };
+  const dropExt = useMemo(() => EditorView.domEventHandlers({
+    drop(e, view) {
+      const files = [...(e.dataTransfer?.files ?? [])];
+      if (!files.length) return false;
+      e.preventDefault();
+      dropAct.current(files, view.posAtCoords({ x: e.clientX, y: e.clientY }));
+      return true;
+    },
+    paste(e) {
+      const files = [...(e.clipboardData?.files ?? [])];
+      if (!files.length) return false;
+      e.preventDefault();
+      dropAct.current(files, null);
+      return true;
+    },
+  }), []);
+  const liveExt = useMemo(() => [live, dropExt], [live, dropExt]);
   /** The properties table's change, made in the editor (so it undoes, and saves like typing). */
   const setProps = (next: Props) => {
     const v = liveView.current;
@@ -361,11 +416,11 @@ export function App() {
               )}
               <div className="body">
                 {!current && <div className="empty"><AppMark app="malachite" size={72} idle label="" /><p>Open a note from the hub, or make one.</p><Key kind="primary" icon="new-file" onClick={() => newNote("")}>New note</Key></div>}
-                {note && mode === "read" && <ReadView note={note} runs={runs} resolve={resolve} look={look} onLink={onLink} onRun={runCell} onStop={stopCell} />}
+                {note && mode === "read" && <ReadView note={note} runs={runs} resolve={resolve} look={look} onLink={onLink} onRun={runCell} onStop={stopCell} media={mediaFor} />}
                 {note && mode !== "read" && (() => {
                   const editor = <Editor key={`${note.path}:${note.sealed}:${mode}`} value={draft ?? note.text} language={markdown} settings={look.settings} appTheme={look.appTheme}
                     readOnly={note.sealed} ariaLabel={`${note.title}, Markdown`} onChange={setDraft} keys={saveKeys}
-                    extra={mode === "live" ? live : undefined} onView={(v) => { liveView.current = v; }} />;
+                    extra={mode === "live" ? liveExt : dropExt} onView={(v) => { liveView.current = v; }} />;
                   return (
                     <div className={`edit ${mode}`} onContextMenu={(e) => { if ((e.target as HTMLElement).closest(".cm-editor")) { e.preventDefault(); setCtx({ x: e.clientX, y: e.clientY, at: liveView.current?.posAtCoords({ x: e.clientX, y: e.clientY }) ?? null }); } }}>
                       {mode === "live" ? <div className="livecol">
@@ -374,13 +429,14 @@ export function App() {
                           ask={(title, value, ok, run) => setAsk({ title, label: "Value", value, ok, run: (v) => v.trim() && run(v.trim()) })} />
                         {editor}
                       </div> : editor}
+                      {mode === "live" && embedEls.map((e) => createPortal(mediaFor(embedPath(e.target, e.wiki), e.alt || (embedPath(e.target, e.wiki) ? "" : e.target)), e.el))}
                       {mode === "live" && cellEls.map((c) => createPortal(
                         <LiveCell key="cell" lang={c.lang} code={c.code} note={note} runs={runs} look={look} onRun={(cell) => liveAct.current.run(cell)} onStop={stopCell} />, c.el))}
                       {ctx && <div className="ctxmenu" style={{ left: ctx.x, top: ctx.y }}><Menu label="Note" items={noteMenu(ctx.at)} onClose={() => setCtx(null)} /></div>}
                     </div>
                   );
                 })()}
-                {current && t !== "md" && <FileView path={current} text={plain} look={look} keys={saveKeys} onChange={setDraft} />}
+                {current && t !== "md" && <FileView path={current} text={plain} look={look} keys={saveKeys} onChange={setDraft} media={mediaFor} />}
               </div>
               {note && <div className="efoot"><span>markdown · {note.body.split(/\s+/).filter(Boolean).length} words · {note.cells.length} cells</span>
                 <Segmented label="View" value={mode} onChange={setMode} options={[{ value: "read", label: "Read" }, { value: "live", label: "Live" }, { value: "edit", label: "Edit" }]} /><span>{links?.backlinks.length ?? 0} backlinks · {links?.links.length ?? 0} links</span></div>}
@@ -433,17 +489,17 @@ function CsvPlot({ text }: { text: string }) {
 
 /** A file that isn't a note: another app's (its name and type), an image, or text in the kit's editor
  *  with its language, linted and completed by the hub's session for Julia and Python. */
-function FileView({ path, text, look, keys, onChange }: { path: string; text: string | null; look: CodeLook; keys: { key: string; run: () => boolean }[]; onChange: (t: string) => void }) {
+function FileView({ path, text, look, keys, onChange, media }: { path: string; text: string | null; look: CodeLook; keys: { key: string; run: () => boolean }[]; onChange: (t: string) => void; media: (p: string, alt: string) => React.ReactNode }) {
   const t = typeOf(path), owner = OWNER[t], language = languageFor(path);
   const session = language.runtime === "julia" || language.runtime === "python" ? SESSIONS[language.runtime] : undefined;
   const settings = useMemo(() => ({ ...look.settings, wrap: false }), [look.settings]);
   return (
     <div className="fileview">
-      {(owner || IMAGE.has(t) || text === null) && (
+      {(owner || mediaOf(path) || text === null) && (
         <div className="fcard"><FileGlyph path={path} size={20} /><b>{nameOf(path)}</b>
-          <small>{owner ? `${owner} draws this once it is installed; until then Malachite shows its text.` : IMAGE.has(t) ? "an image in the hub" : "a file in the hub"}</small></div>
+          <small>{owner ? `${owner} draws this once it is installed; until then Malachite shows its text.` : mediaOf(path) ? `a ${mediaOf(path) === "image" ? "picture" : mediaOf(path)} in the hub` : "a file in the hub"}</small></div>
       )}
-      {IMAGE.has(t) && <img className="fimg" src={api.raw(path)} alt={path} />}
+      {mediaOf(path) && media(path, "")}
       {t === "csv" && text !== null && <CsvPlot text={text} />}
       {text !== null && (
         <div className="fedit"><Editor key={path} value={text} language={language} session={session} settings={settings} appTheme={look.appTheme} ariaLabel={`${nameOf(path)}, ${language.label}`} onChange={onChange} keys={keys} /></div>
