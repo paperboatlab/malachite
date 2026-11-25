@@ -9,7 +9,6 @@ body { background: var(--surface-ground); color: var(--text); font: 13px/1.45 va
 .win { height: 100%; box-sizing: border-box; display: grid; grid-template-columns: auto 1fr; grid-template-rows: 52px 1fr; gap: var(--gutter); padding: var(--gutter); }
 .bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 0 10px 0 12px; background: var(--surface-panel); border: 1px solid var(--line); border-radius: var(--radius-lg); }
 .bar .wm { font: 600 17px var(--font-display); letter-spacing: -0.01em; }
-.bar .hub { height: 28px; gap: 6px; font-size: 13px; margin-left: 8px; max-width: 260px; overflow: hidden; white-space: nowrap; }
 .bend { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .lsep { width: 1px; height: 18px; background: var(--line); }
 .pages { min-height: 0; min-width: 0; display: flex; flex-direction: column; }

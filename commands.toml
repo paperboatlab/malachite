@@ -1,0 +1,64 @@
+# Malachite's commands: installed with the app as <PAPERBOAT_HOME>/apps/malachite/commands.toml; the
+# paperboat CLI adds them to its own (paperboat/src/cli/commands.toml has the format) and runs them
+# through `cli` with every word as typed (`paperboat hub list` → `bin/malachite hub list`). No Malachite,
+# no hub: these words exist only once it is installed. One command per control on the Launcher's Hubs
+# page (paperboat#16; agent-docs/rebrand/apps/hub/launcher.html).
+cli = "bin/malachite"
+
+# ── Hubs ──
+[[command]]
+id = "hub.list"
+name = "hub list"
+alias = ["hubs"]
+args = "[--json]"
+desc = "The hubs: where each lives, its state"
+group = "Hubs"
+
+[[command]]
+id = "hub.show"
+name = "hub show"
+args = "<hub> [--json]"
+desc = "Where a hub lives, what it holds, its history"
+group = "Hubs"
+
+[[command]]
+id = "hub.new"
+name = "hub new"
+args = "<name> [--in <folder>]"
+desc = "Make a hub"
+group = "Hubs"
+
+[[command]]
+id = "hub.add"
+name = "hub add"
+args = "<folder>"
+desc = "Add a hub folder that is already there"
+group = "Hubs"
+
+[[command]]
+id = "hub.rename"
+name = "hub rename"
+args = "<hub> <name>"
+desc = "Rename a hub; the folder keeps its name"
+group = "Hubs"
+
+[[command]]
+id = "hub.config"
+name = "hub config"
+args = "<hub> [author|keep|ignore [<value>]]"
+desc = "Show or change a hub's settings"
+group = "Hubs"
+
+[[command]]
+id = "hub.move"
+name = "hub move"
+args = "<hub> <folder>"
+desc = "Move a hub to another folder, or point it to where it is now"
+group = "Hubs"
+
+[[command]]
+id = "hub.remove"
+name = "hub remove"
+args = "<hub>"
+desc = "Take a hub off the list; its files stay"
+group = "Hubs"

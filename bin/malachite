@@ -1,4 +1,8 @@
 #!/bin/sh
-# Paperboat Malachite: `malachite <hub folder> [--port N]` (the app server; the page is dist/).
+# Paperboat Malachite: `malachite <hub folder> [--port N]` (the app server; the page is dist/), and
+# `malachite hub …` (the hub commands; `paperboat hub …` through Malachite's commands.toml).
 here=$(dirname "$(readlink -f "$0")")
+case "$1" in
+  hub) exec node "$here/../server/cli.ts" "$@" ;;
+esac
 exec node "$here/../server/main.ts" "$@"

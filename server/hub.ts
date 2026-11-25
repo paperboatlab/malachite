@@ -13,28 +13,78 @@ export type Trashed = { id: string; path: string; kind: "file" | "folder"; time:
 export class HubError extends Error { readonly status: number; constructor(message: string, status = 400) { super(message); this.status = status; } }
 
 const HIDDEN = new Set([".malachite", ".git", "node_modules", ".DS_Store"]);
-const SCHEMA = 1;
+const SCHEMA = 2;   // 1: hub.toml at the root; 2: .malachite/hub.toml, with an id (paperboat#16)
+export const KEEP = ["90d", "1y", "always"] as const;
+
+/** A hub's settings (`.malachite/hub.toml`): set from its Settings pane or `paperboat hub config`, never by hand. */
+export type HubConfig = { id: string; name: string; schema: number; author: string; created: string; keep: (typeof KEEP)[number]; ignore: string };
+export type HubKey = "name" | "author" | "keep" | "ignore";
 
 /** "n_" and 12 base32 letters: stable across renames; time-ordered enough to read. */
 export const newId = (prefix = "n") => `${prefix}_${Date.now().toString(36)}${randomBytes(4).toString("hex")}`;
 
+/** The settings file of a hub folder: where schema 2 keeps it, else where schema 1 did. */
+export const configFile = (root: string) => path.join(root, ".malachite", "hub.toml");
+const oldConfigFile = (root: string) => path.join(root, "hub.toml");
+
+/** A folder's hub settings without opening it (no file is written), or null when it isn't a hub. */
+export function peek(root: string): (Partial<HubConfig> & { schema: number }) | null {
+  for (const f of [configFile(root), oldConfigFile(root)]) {
+    if (fs.existsSync(f)) { const c = readToml(fs.readFileSync(f, "utf8")); return { ...c, schema: Number(c.schema ?? 1) } as Partial<HubConfig> & { schema: number }; }
+  }
+  return null;
+}
+
 export class Hub {
   readonly root: string;
-  name: string;
-  author: string;
+  conf: HubConfig;
   onEvent: (e: Event) => void = () => {};
 
   constructor(root: string) {
     this.root = fs.realpathSync(root);
-    const file = path.join(this.root, "hub.toml");
-    const conf = fs.existsSync(file) ? readToml(fs.readFileSync(file, "utf8")) : {};
-    if (conf.schema && Number(conf.schema) > SCHEMA) throw new HubError(`hub.toml has schema ${conf.schema}; this Malachite reads ${SCHEMA}. Update Malachite.`);
-    this.name = conf.name ?? path.basename(this.root);
-    this.author = conf.author ?? os.userInfo().username;
-    if (!fs.existsSync(file)) {
-      fs.writeFileSync(file, `# A Malachite hub (github.com/paperboatlab/malachite)\nname = ${JSON.stringify(this.name)}\nschema = ${SCHEMA}\nauthor = ${JSON.stringify(this.author)}\ncreated = ${JSON.stringify(new Date().toISOString())}\n`);
-      this.log("hub.created");
+    const file = configFile(this.root), old = oldConfigFile(this.root);
+    const fresh = !fs.existsSync(file) && !fs.existsSync(old);
+    let upgraded = false;
+    if (!fs.existsSync(file) && fs.existsSync(old)) {   // schema 1 → 2: the settings move out of sight
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.renameSync(old, file);
+      upgraded = true;
     }
+    const c = fs.existsSync(file) ? readToml(fs.readFileSync(file, "utf8")) : {};
+    if (c.schema && Number(c.schema) > SCHEMA) throw new HubError(`this hub has schema ${c.schema}; this Malachite reads ${SCHEMA}. Update Malachite.`);
+    this.conf = {
+      id: c.id || newId("h"), name: c.name || path.basename(this.root), schema: SCHEMA, author: c.author || os.userInfo().username,
+      created: c.created || new Date().toISOString(), keep: (KEEP as readonly string[]).includes(c.keep) ? (c.keep as HubConfig["keep"]) : "always",
+      ignore: c.ignore ?? ".malachite/out/ *.tmp",
+    };
+    if (fresh || upgraded || !c.id || Number(c.schema) !== SCHEMA) this.save();
+    if (fresh) this.log("hub.created");
+    else if (upgraded) this.log("hub.upgraded", undefined, { schema: SCHEMA });
+  }
+
+  get id() { return this.conf.id; }
+  get name() { return this.conf.name; }
+  get author() { return this.conf.author; }
+
+  /** One setting changed (the Settings pane, `paperboat hub config`). */
+  set(key: HubKey, value: string) {
+    const v = value.trim();
+    if (key === "keep" && !(KEEP as readonly string[]).includes(v)) throw new HubError(`keep is one of ${KEEP.join(", ")}`);
+    if ((key === "name" || key === "author") && (!v || /[\n"]/.test(v))) throw new HubError(`${key} can't be empty or hold quotes`);
+    if (!["name", "author", "keep", "ignore"].includes(key)) throw new HubError(`${key} is not a hub setting (name, author, keep, ignore)`);
+    const from = this.conf[key];
+    if (from === v) return;
+    (this.conf as Record<HubKey, string>)[key] = v;
+    this.save();
+    this.log("hub.config", undefined, { key, from, to: v });
+  }
+
+  private save() {
+    const c = this.conf, file = configFile(this.root);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const lines = ["# A Malachite hub (github.com/paperboatlab/malachite). Set from its Settings or `paperboat hub config`."]
+      .concat((Object.keys(c) as (keyof HubConfig)[]).map((k) => `${k} = ${typeof c[k] === "number" ? c[k] : JSON.stringify(c[k])}`));
+    this.put(file, lines.join("\n") + "\n");
   }
 
   /** An absolute path for a hub-relative one, or an error if it leaves the hub. */
