@@ -9,6 +9,7 @@ import { bodyHash, join, split } from "./note.ts";
 
 export type Entry = { path: string; name: string; kind: "dir" | "file"; size?: number; mtime?: number; children?: Entry[] };
 export type Event = { time: string; actor: string; action: string; target?: string; details?: Record<string, unknown> };
+export type Trashed = { id: string; path: string; kind: "file" | "folder"; time: string; actor: string };
 export class HubError extends Error { readonly status: number; constructor(message: string, status = 400) { super(message); this.status = status; } }
 
 const HIDDEN = new Set([".malachite", ".git", "node_modules", ".DS_Store"]);
@@ -130,13 +131,62 @@ export class Hub {
   }
 
   /** Move to trash: into `.malachite/trash/<time>/`, so it can come back. */
+  /** To the hub's trash: `.malachite/trash/<id>/<path>`, with `trashed.json` saying what, from where, who and
+   *  when, so it can come back. */
   trash(rel: string) {
     const abs = this.resolve(rel);
     if (abs === this.root) throw new HubError("the hub itself can't go to the trash");
-    const dest = path.join(this.root, ".malachite", "trash", new Date().toISOString().replace(/[:.]/g, "-"), rel);
+    const kind = fs.statSync(abs).isDirectory() ? "folder" : "file";
+    let id = new Date().toISOString().replace(/[:.]/g, "-");
+    while (fs.existsSync(this.trashDir(id))) id += "x";
+    const dest = path.join(this.trashDir(id), rel);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.renameSync(abs, dest);
-    this.log("file.trashed", rel, { to: this.rel(dest) });
+    fs.writeFileSync(path.join(this.trashDir(id), "trashed.json"), JSON.stringify({ path: rel, kind, time: new Date().toISOString(), actor: this.author }) + "\n");
+    this.log("file.trashed", rel, { trash: id });
+  }
+
+  private trashDir = (id: string) => {
+    if (!/^[\w-]+$/.test(id)) throw new HubError(`no ${id} in the trash`, 404);
+    return path.join(this.root, ".malachite", "trash", id);
+  };
+
+  /** What is in the trash, newest first. An entry from before trashed.json is read from its folders. */
+  trashed(): Trashed[] {
+    const dir = path.join(this.root, ".malachite", "trash");
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir).filter((id) => /^[\w-]+$/.test(id)).map((id): Trashed => {
+      const at = path.join(dir, id);
+      try { const m = JSON.parse(fs.readFileSync(path.join(at, "trashed.json"), "utf8")); return { id, path: m.path, kind: m.kind, time: m.time, actor: m.actor }; } catch { /* an older entry */ }
+      let rel = "";
+      for (let names = fs.readdirSync(at); names.length === 1 && fs.statSync(path.join(at, rel, names[0])).isDirectory(); ) { rel = rel ? `${rel}/${names[0]}` : names[0]; names = fs.readdirSync(path.join(at, rel)); }
+      const names = fs.readdirSync(path.join(at, rel));
+      const one = names.length === 1 ? (rel ? `${rel}/${names[0]}` : names[0]) : rel;
+      return { id, path: one, kind: fs.statSync(path.join(at, one)).isDirectory() ? "folder" : "file", time: fs.statSync(at).mtime.toISOString(), actor: "" };
+    }).sort((a, b) => b.time.localeCompare(a.time));
+  }
+
+  /** Back where it was; if something new has that name, beside it as "<name> (restored)". Returns its path. */
+  restore(id: string): string {
+    const t = this.trashed().find((x) => x.id === id);
+    if (!t) throw new HubError(`no ${id} in the trash`, 404);
+    let to = t.path;
+    const ext = path.extname(to), stem = to.slice(0, to.length - ext.length);
+    for (let n = 1; fs.existsSync(this.resolve(to)); n++) to = `${stem} (restored${n > 1 ? ` ${n}` : ""})${ext}`;
+    fs.mkdirSync(path.dirname(this.resolve(to)), { recursive: true });
+    fs.renameSync(path.join(this.trashDir(id), t.path), this.resolve(to));
+    fs.rmSync(this.trashDir(id), { recursive: true, force: true });
+    this.log("file.restored", to, to === t.path ? {} : { was: t.path });
+    return to;
+  }
+
+  /** Gone for good: one entry, or (no id) the whole trash. */
+  purge(id?: string) {
+    const all = this.trashed(), gone = id ? all.filter((x) => x.id === id) : all;
+    if (id && !gone.length) throw new HubError(`no ${id} in the trash`, 404);
+    for (const t of gone) fs.rmSync(this.trashDir(t.id), { recursive: true, force: true });
+    if (id) this.log("file.deleted", gone[0].path, { trash: id });
+    else this.log("trash.emptied", undefined, { count: gone.length });
   }
 
   /** Seal: freeze the body, record who, when and its hash. Afterwards the note only takes annotations. */

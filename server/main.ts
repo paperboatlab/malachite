@@ -82,6 +82,10 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
         case "POST /api/folder": { hub.mkdir(String(body.path)); return send(res, 200, {}); }
         case "POST /api/move": { hub.rename(String(body.from), String(body.to)); return send(res, 200, {}); }
         case "POST /api/trash": { hub.trash(String(body.path)); index.update(String(body.path)); return send(res, 200, {}); }
+        case "GET /api/trash": return send(res, 200, hub.trashed());
+        case "POST /api/trash/restore": { const p = hub.restore(String(body.id)); index.update(p); for (const f of hub.files()) if (!index.items.has(f)) index.update(f); return send(res, 200, { path: p }); }
+        case "POST /api/trash/delete": { hub.purge(String(body.id)); return send(res, 200, {}); }
+        case "POST /api/trash/empty": { hub.purge(); return send(res, 200, {}); }
         case "POST /api/prop": { hub.setProp(String(body.path), String(body.key), String(body.value ?? "")); index.update(String(body.path)); return send(res, 200, {}); }
         case "POST /api/seal": { hub.seal(String(body.path)); index.update(String(body.path)); return send(res, 200, {}); }
         case "GET /api/links": {
