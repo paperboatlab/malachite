@@ -67,6 +67,7 @@ export function App() {
   const [hub, setHub] = useState<HubConf | null>(null);
   const [hubs, setHubs] = useState<KnownHub[]>([]);
   const [settings, setSettings] = useState(false);
+  const [restored, setRestored] = useState(0);   // a restored note redraws its editor from the file
   const [tree, setTree] = useState<Entry[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [page, setPage] = useState<Page>("notes");
@@ -471,7 +472,7 @@ export function App() {
                 {!current && <div className="empty"><AppMark app="malachite" size={72} idle label="" /><p>Open a note from the hub, or make one.</p><Key kind="primary" icon="new-file" onClick={() => newNote("")}>New note</Key></div>}
                 {note && mode === "read" && <ReadView note={note} runs={runs} resolve={resolve} look={look} onLink={onLink} onRun={runCell} onStop={stopCell} media={mediaFor} />}
                 {note && mode !== "read" && (() => {
-                  const editor = <Editor key={`${note.path}:${note.sealed}:${mode}`} value={draft ?? note.text} language={markdown} settings={look.settings} appTheme={look.appTheme}
+                  const editor = <Editor key={`${note.path}:${note.sealed}:${mode}:${restored}`} value={draft ?? note.text} language={markdown} settings={look.settings} appTheme={look.appTheme}
                     readOnly={note.sealed} ariaLabel={`${note.title}, Markdown`} onChange={setDraft} keys={saveKeys}
                     extra={mode === "live" ? liveExt : dropExt} onView={(v) => { liveView.current = v; }} />;
                   return (
@@ -497,6 +498,8 @@ export function App() {
 
             <Panel name="Links" side="right" hidden={hideR} onHidden={setHideR} icon="references" width={300}>
               <LinksCard links={links} self={current ?? ""} onOpen={open} onCreate={(n) => onLink(n, true)}
+                onRestore={(v) => current && setAsk({ title: `Restore ${nameOf(current)} as it was ${v.time.slice(0, 16).replace("T", " ")}?`, note: "The current version stays in its versions; you can come back to it.", ok: "Restore",
+                  run: () => api.restoreVersion(v.id, current).then(() => api.note(current)).then((n) => { setNote(n); setDraft(null); setRestored((k) => k + 1); reload(); api.links(current).then(setLinks, () => {}); }, fail) })}
                 graph={current && t === "md" ? <HubGraph focus={current} links={allLinks} items={items} local onOpen={open} /> : undefined} />
             </Panel>
           </div>

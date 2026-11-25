@@ -11,6 +11,7 @@ import { Control, ControlError } from "./control.ts";
 import { Index } from "./index.ts";
 import { bodyHash, parse, type Lang } from "./note.ts";
 import { NoSession, Sessions } from "./sessions.ts";
+import { History } from "./history.ts";
 import { Hub, HubError, type HubKey } from "./hub.ts";
 import { defaultFolder, forget, infos, remember, tilde } from "./hubs.ts";
 
@@ -34,6 +35,20 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
   fs.writeFileSync(serving, String(process.pid));
   process.on("exit", () => { try { if (fs.readFileSync(serving, "utf8") === String(process.pid)) fs.rmSync(serving); } catch { /* gone */ } });
   const hubInfo = () => ({ ...hub.conf, root: hub.root, shown: tilde(hub.root), place: "local" as const });
+  // the history: other machines' pasts first, then what changed while no Malachite was watching
+  const history = new History(hub);
+  history.merge();
+  history.save(history.versions(".", 1).length ? "Changes while Malachite was closed" : undefined);
+  let packTimer: NodeJS.Timeout | undefined, saveTimer: NodeJS.Timeout | undefined;
+  const pack = () => { clearTimeout(packTimer); try { history.pack(); } catch (e) { console.error(`malachite: history: ${(e as Error).message}`); } };
+  const saveSoon = () => {   // a version a few seconds after the last change; the bundle every few minutes
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try { if (history.save() && !packTimer) packTimer = setTimeout(() => { packTimer = undefined; pack(); }, 5 * 60_000); }
+      catch (e) { console.error(`malachite: history: ${(e as Error).message}`); }
+    }, 3000);
+  };
+  process.on("exit", () => { clearTimeout(saveTimer); try { history.save(); history.pack(); } catch { /* the next open saves it */ } });
   const index = new Index(hub);
   index.build();
   const clients = new Set<http.ServerResponse>();
@@ -57,6 +72,7 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
       for (const p of index.items.keys()) if (!fs.existsSync(path.join(hub.root, p))) index.items.delete(p);
       for (const f of hub.files()) if (!index.items.has(f)) index.update(f);
       emit({ type: "files", changed });
+      saveSoon();
     }, 120);
   });
 
@@ -86,7 +102,14 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
       const route = `${req.method} ${url.pathname}`;
       switch (route) {
         case "GET /api/hub": return send(res, 200, hubInfo());
-        case "POST /api/hub/config": { hub.set(String(body.key) as HubKey, String(body.value ?? "")); return send(res, 200, hubInfo()); }
+        case "POST /api/hub/config": { hub.set(String(body.key) as HubKey, String(body.value ?? "")); history.excludes(); saveSoon(); return send(res, 200, hubInfo()); }
+        case "GET /api/versions": return send(res, 200, { ok: history.ok, versions: history.versions(url.searchParams.get("path") ?? "") });
+        case "POST /api/versions/restore": {
+          clearTimeout(saveTimer);
+          const id = history.restore(String(body.id), String(body.path ?? ""));
+          for (const f of hub.files()) index.update(f);
+          return send(res, 200, { id });
+        }
         case "GET /api/hubs": return send(res, 200, infos());
         case "POST /api/hubs/remove": { forget(String(body.id)); return send(res, 200, {}); }
         // another hub opens in its own Malachite (paperboat app open): one server per hub

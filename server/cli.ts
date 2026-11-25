@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Hub, HubError, KEEP, peek, type HubKey } from "./hub.ts";
+import { History } from "./history.ts";
 import { defaultFolder, find, forget, infos, remember, tilde, type HubInfo } from "./hubs.ts";
 
 const placeName = (h: HubInfo) => (h.place === "google-drive" ? "Google Drive" : "Local");
@@ -47,7 +48,7 @@ export function run(argv: string[]): number {
       out({ ...h, ...c, holds: x }, () => {
         console.log(`${h.name.padEnd(9)}   ${placeName(h)} · ${tilde(h.path)}`);
         console.log(`holds       ${x.notes} notes · ${x.runs} runs · ${x.models} models · ${x.files} files · ${size(x.bytes)}`);
-        console.log(`history     kept ${c.keep === "always" ? "always" : c.keep === "1y" ? "1 year" : "90 days"}`);
+        console.log(`history     ${new History(new Hub(h.path)).versions(".", 100_000).length} versions, kept ${c.keep === "always" ? "always" : c.keep === "1y" ? "1 year" : "90 days"}`);
         console.log(`made        ${String(c.created).slice(0, 10)} by ${c.author} · hub format ${c.schema}`);
       });
       return 0;
@@ -115,6 +116,21 @@ export function run(argv: string[]): number {
       out({ ...h, path: to }, () => console.log(`moved ${h.name}: ${tilde(h.path)} → ${tilde(to)}`));
       return 0;
     }
+    case "history": {
+      const h = find(need(0, "hub")), rel = rest[1] ?? "";
+      const vs = new History(new Hub(h.path)).versions(rel);
+      out(vs, () => {
+        if (!vs.length) return console.log(`${h.name}${rel ? ` · ${rel}` : ""} has no versions yet`);
+        table(["VERSION", "WHEN", "WHO", "WHAT"], vs.map((v) => [v.id, v.time.slice(0, 16).replace("T", " "), v.author, v.what]));
+      });
+      return 0;
+    }
+    case "restore": {
+      const h = find(need(0, "hub")), id = need(1, "version"), rel = rest[2] ?? "";
+      const made = new History(new Hub(h.path)).restore(id, rel);
+      out({ restored: rel || ".", from: id, version: made }, () => console.log(`restored ${rel || h.name} from ${id}; the version before is kept`));
+      return 0;
+    }
     case "remove": {
       const h = find(need(0, "hub"));
       forget(h.id);
@@ -122,7 +138,7 @@ export function run(argv: string[]): number {
       return 0;
     }
     default:
-      throw new HubError(`paperboat hub ${verb}: not a command (list, show, new, add, rename, config, move, remove)`);
+      throw new HubError(`paperboat hub ${verb}: not a command (list, show, new, add, rename, config, move, history, restore, remove)`);
   }
 }
 

@@ -57,6 +57,20 @@ desc = "Move a hub to another folder, or point it to where it is now"
 group = "Hubs"
 
 [[command]]
+id = "hub.history"
+name = "hub history"
+args = "<hub> [<path>] [--json]"
+desc = "A hub's versions, newest first: the whole hub, or one file or folder"
+group = "Hubs"
+
+[[command]]
+id = "hub.restore"
+name = "hub restore"
+args = "<hub> <version> [<path>]"
+desc = "Bring back a version; the current one is kept too"
+group = "Hubs"
+
+[[command]]
 id = "hub.remove"
 name = "hub remove"
 args = "<hub>"

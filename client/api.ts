@@ -18,6 +18,7 @@ export type Trashed = { id: string; path: string; kind: "file" | "folder"; time:
 export type HubConf = { id: string; name: string; schema: number; author: string; created: string; keep: "90d" | "1y" | "always"; ignore: string; root: string; shown: string; place: "local" | "google-drive" };
 /** A hub this machine knows ($PAPERBOAT_HOME/hubs.toml). */
 export type KnownHub = { id: string; path: string; shown: string; place: "local" | "google-drive"; name: string; missing?: boolean };
+export type Version = { id: string; time: string; author: string; what: string };
 export type Peek = { sessions: Session[]; runtimes: { name: string; version: string }[] };
 
 async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -35,6 +36,8 @@ export const api = {
   hubOpen: (id: string) => call<{ url: string }>("POST", "/api/hubs/open", { id }),
   hubNew: (name: string) => call<{ url: string }>("POST", "/api/hubs/new", { name }),
   hubForget: (id: string) => call("POST", "/api/hubs/remove", { id }),
+  versions: (p: string) => call<{ ok: boolean; versions: Version[] }>("GET", `/api/versions?path=${q(p)}`),
+  restoreVersion: (id: string, p: string) => call<{ id: string | null }>("POST", "/api/versions/restore", { id, path: p }),
   tree: () => call<Entry[]>("GET", "/api/tree"),
   index: () => call<Item[]>("GET", "/api/index"),
   note: (p: string) => call<NoteData>("GET", `/api/note?path=${q(p)}`),

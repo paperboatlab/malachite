@@ -2,7 +2,7 @@
 // runtimes key with its peek (REBRAND "Runtimes key"): one key, never a row of pills.
 import { Icon, Key, Spinner, useDismiss } from "@paperboatlab/ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { api, type LogEvent, type Lang, type Links, type Peek } from "./api.ts";
+import { api, type LogEvent, type Lang, type Links, type Peek, type Version } from "./api.ts";
 import { FileGlyph } from "./files.tsx";
 
 /** A backlink's line, its wikilinks shown as their text, the ones naming this note highlighted. */
@@ -16,7 +16,7 @@ function Context({ text, self }: { text: string; self: string }) {
   })}</p>;
 }
 
-export function LinksCard({ links, self, graph, onOpen, onCreate }: { links: Links | null; self: string; graph?: ReactNode; onOpen: (p: string) => void; onCreate: (name: string) => void }) {
+export function LinksCard({ links, self, graph, onOpen, onCreate, onRestore }: { links: Links | null; self: string; graph?: ReactNode; onOpen: (p: string) => void; onCreate: (name: string) => void; onRestore: (v: Version) => void }) {
   if (!links) return <div className="sh muted">No note open.</div>;
   return (
     <>
@@ -37,6 +37,30 @@ export function LinksCard({ links, self, graph, onOpen, onCreate }: { links: Lin
       </div>
       <div className="sh hr"><b>History</b><code>log/</code></div>
       <div className="lev">{links.history.map((e, i) => <Ev key={i} e={e} />)}</div>
+      <Versions path={self} changed={links} onRestore={onRestore} />
+    </>
+  );
+}
+
+/** The note's versions (the hub's history, Git underneath, never named): when, who, what, Restore. */
+function Versions({ path, changed, onRestore }: { path: string; changed: unknown; onRestore: (v: Version) => void }) {
+  const [vs, setVs] = useState<{ ok: boolean; versions: Version[] } | null>(null);
+  useEffect(() => { let live = true; api.versions(path).then((v) => live && setVs(v), () => live && setVs(null)); return () => { live = false; }; }, [path, changed]);
+  if (!vs) return null;
+  return (
+    <>
+      <div className="sh hr"><b>Versions</b><code>{vs.versions.length || ""}</code></div>
+      {!vs.ok && <p className="none">History needs Git on this computer.</p>}
+      {vs.ok && vs.versions.length === 0 && <p className="none">Saved changes become versions here.</p>}
+      <div className="vers">
+        {vs.versions.slice(0, 30).map((v, i) => (
+          <div key={v.id} className="ver">
+            <time title={v.time}>{new Date(v.time).toDateString() === new Date().toDateString() ? v.time.slice(11, 16) : v.time.slice(5, 10)}</time>
+            <span>{v.what} <em>{v.author}</em></span>
+            {i > 0 && <Key size="sm" kind="quiet" onClick={() => onRestore(v)}>Restore</Key>}
+          </div>
+        ))}
+      </div>
     </>
   );
 }
