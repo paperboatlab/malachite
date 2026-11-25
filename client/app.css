@@ -96,7 +96,7 @@ a.wl.miss, .wl.miss { color: var(--text-muted); text-decoration-style: dashed; }
 
 /* files that aren't notes */
 .fileview { padding: 20px 28px; display: flex; flex-direction: column; gap: 14px; }
-.fcard { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-raised); }
+.fcard { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-raised); }
 .fcard b { font: 500 13px var(--font-mono); } .fcard small { grid-column: 2; color: var(--text-muted); }
 .ftext { margin: 0; padding: 12px 14px; background: var(--surface-well); box-shadow: var(--well-shadow); border-radius: var(--radius-md); font: 12.5px/1.6 var(--font-mono); white-space: pre-wrap; overflow: auto; }
 
@@ -267,3 +267,4 @@ figure.media.img figcaption { margin-top: 6px; font-size: 12px; color: var(--tex
 .ver { display: grid; grid-template-columns: 40px 1fr auto; gap: 8px; align-items: center; min-height: 28px; font: 12px var(--font-mono); }
 .ver time { color: var(--text-muted); }
 .ver em { font-style: normal; color: var(--text-muted); }
+.fcard-keys { grid-column: 3; grid-row: 1 / span 2; display: inline-flex; gap: 6px; }

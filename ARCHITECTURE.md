@@ -57,7 +57,9 @@ flowchart LR
   language, run in their note's folder, and their outputs are written to
   `.malachite/out/<note id>/<cell hash>.json` with the runtime, image digest and backend that made them.
   Interrupt goes through the daemon (SIGINT); no answer within 3 s restarts the session.
-- `server/main.ts`: the HTTP server: the page from `dist/`, the JSON API, Server-Sent Events, a file's bytes
+- `server/main.ts`: the HTTP server: another app's file opens there (`paperboat app open <app> <hub> --no-open`,
+  then `?open=<path>`: the app works in the hub) or is copied out to `~/Documents/paperboat/<app>/` (no tie
+  to the hub); the page from `dist/`, the JSON API, Server-Sent Events, a file's bytes
   with byte ranges (a video seeks), and uploads (to a temporary name, then renamed; a replaced file goes to
   the trash, a taken name becomes "<name> (2)").
 - `client/`: `App.tsx` (the shell: bar, rail, cards, tabs, search, dialogs; a note as Read, Live (the kit
