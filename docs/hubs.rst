@@ -8,10 +8,14 @@ choose.
 The hub's settings
 ------------------
 
-``.malachite/hub.toml`` holds the settings that travel with the hub: its ``id`` (how it is found again
-after a rename or a move), ``name``, ``author``, how long versions are kept (``keep``) and what is
-never versioned (``ignore``). Change them in Settings › Hub or with ``paperboat hub config``; don't
-edit the file by hand.
+``.malachite/hub.toml`` holds the settings that travel with the hub: ``id`` (how it is found again
+after a rename or a move), ``name``, ``schema``, ``author``, ``created``, ``keep`` and ``ignore`` (what
+is never versioned). Change them in Settings › Hub or with ``paperboat hub config``; don't edit the
+file by hand. A ``hub.toml`` at the hub's root (schema 1) moves into ``.malachite/`` when the hub
+opens.
+
+``.malachite/`` holds ``hub.toml`` and ``history/``; the rest of it (``out/``, ``trash/``) can be
+deleted while no Malachite has the hub open (``serving.pid`` tells ``hub move`` that one does).
 
 The hubs on this machine
 ------------------------
@@ -23,8 +27,13 @@ hubs but never picks one for an app.
 Cloud hubs
 ----------
 
-A cloud hub is a folder that Dropbox, OneDrive, Google Drive or iCloud syncs. Malachite flags the
-conflict copies a sync makes.
+A cloud hub is a folder that another app syncs: Paperboat syncs nothing itself. Malachite names the
+provider from the folder's path (Dropbox, OneDrive, Google Drive, iCloud Drive) and shows, for
+example, "Dropbox's app syncs it".
 
-.. note:: Not written yet: making a cloud hub, the ``local`` and ``metered`` machine settings,
-   resolving a conflict copy.
+When two machines change the same file, the sync app leaves a conflict copy. Malachite recognises
+Dropbox's ``(… conflicted copy …)``, Syncthing's ``.sync-conflict-…`` and rclone bisync's
+``.conflictN``: it marks them "conflict" in the tree, says so when the hub opens, and counts them in red
+in the selector and in ``paperboat hub list``.
+
+.. note:: Not written yet: making a cloud hub, resolving a conflict copy.
