@@ -20,22 +20,23 @@ export type FileActions = {
   sealed: (p: string) => boolean;
 };
 
-export function fileMenu(e: FileEntry | undefined, a: FileActions): MenuEntry[] {
+/** `tab`: for a tab's menu, which leaves out the Open group (the tab is open). */
+export function fileMenu(e: FileEntry | undefined, a: FileActions, tab = false): MenuEntry[] {
   if (!e) return [{ id: "new", label: "New note", shortcut: "Ctrl N", icon: "new-file", run: () => a.newNote("") }, { id: "folder", label: "New folder", icon: "new-folder", run: () => a.newFolder("") }];
   const dir = e.kind === "folder", t = typeOf(e.path), owner = OWNER[t], name = e.name.replace(/\.md$/, "");
   const items: MenuEntry[] = [];
-  if (!dir) {
+  if (!dir && !tab) {
     items.push({ id: "open", label: "Open", shortcut: "Enter", run: () => a.open(e.path) });
     items.push({ id: "side", label: "Open to the side", shortcut: "Ctrl Enter", run: () => a.open(e.path, true) });
     if (owner) items.push({ id: "in", label: `Open in ${owner}`, icon: "link-external", disabled: true, why: `${owner} isn't installed yet`, run: () => {} });
-  } else {
+  } else if (dir) {
     items.push({ id: "new", label: "New note here", shortcut: "Ctrl N", run: () => a.newNote(e.path) });
     items.push({ id: "folder", label: "New folder here", run: () => a.newFolder(e.path) });
   }
   if (t === "md") {
-    items.push("-", { note: "Malachite" }, { id: "seal", label: "Seal…", icon: "lock", disabled: a.sealed(e.path), why: "It is sealed", run: () => a.seal(e.path) });
+    items.push("-", { group: "Malachite" }, { id: "seal", label: "Seal…", icon: "lock", disabled: a.sealed(e.path), why: "It is sealed", run: () => a.seal(e.path) });
   } else if (owner) {
-    items.push("-", { note: owner }, { id: "app", label: owner === "Simplicial" ? "Run the station" : owner === "Julix" ? "Run all cells" : "Simulate", disabled: true, why: `${owner} isn't installed yet`, run: () => {} });
+    items.push("-", { group: owner }, { id: "app", label: owner === "Simplicial" ? "Run the station" : owner === "Julix" ? "Run all cells" : "Simulate", disabled: true, why: `${owner} isn't installed yet`, run: () => {} });
   }
   items.push("-", { id: "rename", label: "Rename…", shortcut: "F2", run: () => a.rename(e.path) });
   items.push("-");
@@ -44,5 +45,5 @@ export function fileMenu(e: FileEntry | undefined, a: FileActions): MenuEntry[] 
   items.push({ id: "reveal", label: "Reveal in file manager", run: () => a.reveal(e.path) });
   if (!dir) items.push("-", { id: "graph", label: "Show in graph", run: () => a.graph(e.path) }, { id: "back", label: `Backlinks  ${a.backlinkCount(e.path)}`, run: () => a.backlinks(e.path) });
   items.push("-", { id: "trash", label: "Move to trash", shortcut: "Del", run: () => a.trash(e.path) });
-  return items;
+  return items[0] === "-" ? items.slice(1) : items;
 }
