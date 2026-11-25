@@ -15,7 +15,7 @@ hub's session through `paperboatd`. Every change lands in an append-only log; a 
 **Status:** v0.1, the first app on the new platform. Runs, the Log page and Settings come next; Julix's plots and
 the other apps' embeds when those apps are rebuilt.
 
-**Docs:** <https://paperboatlab.github.io/apps/malachite/> (sources in [`docs/`](docs/))
+**Docs:** <https://paperboatlab.org/apps/malachite/> (sources in [`docs/`](docs/))
 
 **Design:** [ARCHITECTURE.md](ARCHITECTURE.md) · **Spec:** pb#415 (paperboat-legacy) · **Look:**
 [@paperboatlab/ui](https://github.com/paperboatlab/paperboat-ui) and the rebrand mockup
