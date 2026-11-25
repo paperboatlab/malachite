@@ -71,7 +71,8 @@ export function App() {
   const [hub, setHub] = useState<HubConf | null>(null);
   const [hubs, setHubs] = useState<KnownHub[]>([]);
   const [settings, setSettings] = useState(false);
-  const [restored, setRestored] = useState(0);   // a restored note redraws its editor from the file
+  const [restored, setRestored] = useState(0);
+  const [apps, setApps] = useState<{ name: string; label: string }[]>([]);   // installed beside Malachite: they open their own files   // a restored note redraws its editor from the file
   const [tree, setTree] = useState<Entry[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [page, setPage] = useState<Page>("notes");
@@ -116,6 +117,7 @@ export function App() {
   const reload = useCallback(() => { api.tree().then(setTree, fail); api.index().then(setItems, fail); }, [fail]);
   useEffect(() => {
     api.hubs().then(setHubs, () => setHubs([]));
+    api.apps().then(setApps, () => setApps([]));
     api.hub().then((v) => {
       setHub(v); document.title = `${v.name} · Malachite`;
       if (v.conflicts.length) show({ title: `${v.conflicts.length === 1 ? "A conflict copy" : `${v.conflicts.length} conflict copies`} in ${v.name}`, state: "failed",
@@ -504,7 +506,9 @@ export function App() {
                     </div>
                   );
                 })()}
-                {current && t !== "md" && <FileView path={current} text={plain} look={look} keys={saveKeys} onChange={setDraft} media={mediaFor} />}
+                {current && t !== "md" && <FileView path={current} text={plain} look={look} keys={saveKeys} onChange={setDraft} media={mediaFor} apps={apps}
+                  onApp={(app, copy) => { const label = apps.find((a) => a.name === app)?.label ?? app;
+                    api.openIn(app, current, copy).then((r) => { window.open(r.url, "_blank"); show({ title: copy ? `Copied to ${label}` : `Opened in ${label}`, detail: copy ? `${r.folder}/${r.file} · not in the hub` : `${label} works in ${hub?.name ?? "the hub"}`, state: "done" }); }, fail); }} />}
               </div>
               {note && <div className="efoot"><span>markdown · {note.body.split(/\s+/).filter(Boolean).length} words · {note.cells.length} cells</span>
                 <Segmented label="View" value={mode} onChange={setMode} options={[{ value: "read", label: "Read" }, { value: "live", label: "Live" }, { value: "edit", label: "Edit" }]} /><span>{links?.backlinks.length ?? 0} backlinks · {links?.links.length ?? 0} links</span></div>}
@@ -576,15 +580,20 @@ function CsvPlot({ text }: { text: string }) {
 
 /** A file that isn't a note: another app's (its name and type), an image, or text in the kit's editor
  *  with its language, linted and completed by the hub's session for Julia and Python. */
-function FileView({ path, text, look, keys, onChange, media }: { path: string; text: string | null; look: CodeLook; keys: { key: string; run: () => boolean }[]; onChange: (t: string) => void; media: (p: string, alt: string) => React.ReactNode }) {
+function FileView({ path, text, look, keys, onChange, media, apps, onApp }: { path: string; text: string | null; look: CodeLook; keys: { key: string; run: () => boolean }[]; onChange: (t: string) => void; media: (p: string, alt: string) => React.ReactNode; apps: { name: string; label: string }[]; onApp: (app: string, copy: boolean) => void }) {
   const t = typeOf(path), owner = OWNER[t], language = languageFor(path);
+  const app = owner && apps.find((a) => a.label === owner || a.name === owner.toLowerCase());
   const session = language.runtime === "julia" || language.runtime === "python" ? SESSIONS[language.runtime] : undefined;
   const settings = useMemo(() => ({ ...look.settings, wrap: false }), [look.settings]);
   return (
     <div className="fileview">
       {(owner || mediaOf(path) || text === null) && (
         <div className="fcard"><FileGlyph path={path} size={20} /><b>{nameOf(path)}</b>
-          <small>{owner ? `${owner} draws this once it is installed; until then Malachite shows its text.` : mediaOf(path) ? `a ${mediaOf(path) === "image" ? "picture" : mediaOf(path)} in the hub` : "a file in the hub"}</small></div>
+          <small>{app ? `${owner}'s file: open it there on this hub, or copy it out to work on it alone.` : owner ? `${owner} draws this once it is installed (paperboat app install ${owner.toLowerCase()}); until then Malachite shows its text.` : mediaOf(path) ? `a ${mediaOf(path) === "image" ? "picture" : mediaOf(path)} in the hub` : "a file in the hub"}</small>
+          {app && <span className="fcard-keys">
+            <Key size="sm" icon="link-external" onClick={() => onApp(app.name, false)} title={`${owner} opens this hub and this file; what you change is in the hub`}>Open in {owner}</Key>
+            <Key size="sm" icon="copy" onClick={() => onApp(app.name, true)} title={`A copy in ${owner}'s own folder, outside the hub; the hub's file stays as it is`}>Copy to {owner}</Key>
+          </span>}</div>
       )}
       {mediaOf(path) && media(path, "")}
       {t === "csv" && text !== null && <CsvPlot text={text} />}

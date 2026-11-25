@@ -37,6 +37,8 @@ export const api = {
   hubOpen: (id: string) => call<{ url: string }>("POST", "/api/hubs/open", { id }),
   hubNew: (name: string) => call<{ url: string }>("POST", "/api/hubs/new", { name }),
   hubForget: (id: string) => call("POST", "/api/hubs/remove", { id }),
+  apps: () => call<{ name: string; label: string }[]>("GET", "/api/apps"),
+  openIn: (app: string, p: string, copy: boolean) => call<{ url: string; folder: string; file: string }>("POST", "/api/apps/open", { app, path: p, copy }),
   versions: (p: string) => call<{ ok: boolean; versions: Version[] }>("GET", `/api/versions?path=${q(p)}`),
   restoreVersion: (id: string, p: string) => call<{ id: string | null }>("POST", "/api/versions/restore", { id, path: p }),
   about: () => call<{ format: number; paperboat: string | null }>("GET", "/api/about"),

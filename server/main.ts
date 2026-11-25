@@ -4,6 +4,7 @@
 // can't drive it.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -120,6 +121,25 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
           if (!h || h.missing) throw new HubError("can't find that hub's folder", 404);
           return send(res, 200, await openHub(h.path));
         }
+        case "GET /api/apps": return send(res, 200, await installedApps().catch(() => []));
+        // a file another app draws: open it there on this hub (the app works in the hub), or copy it out
+        case "POST /api/apps/open": {
+          const app = String(body.app), rel = String(body.path), copy = !!body.copy;
+          if (!(await installedApps()).some((a) => a.name === app)) throw new HubError(`${app} is not installed · paperboat app install ${app}`, 409);
+          if (!fs.statSync(hub.resolve(rel)).isFile()) throw new HubError(`${rel} is not a file`);
+          let folder = hub.root, open = rel;
+          if (copy) {
+            folder = copyFolder(app);
+            fs.mkdirSync(folder, { recursive: true });
+            const ext = path.extname(rel), stem = path.basename(rel, ext);
+            open = `${stem}${ext}`;
+            for (let n = 2; fs.existsSync(path.join(folder, open)); n++) open = `${stem} (${n})${ext}`;
+            fs.copyFileSync(hub.resolve(rel), path.join(folder, open), fs.constants.COPYFILE_EXCL);
+            hub.log("file.copied", rel, { app, to: path.join(folder, open) });
+          }
+          const s = await paperboat(["app", "open", app, folder, "--no-open"]);
+          return send(res, 200, { url: `${s.url.replace(/\/?$/, "/")}?open=${encodeURIComponent(open)}`, folder: tilde(folder), file: open });
+        }
         case "POST /api/hubs/new": {
           const name = String(body.name ?? "").trim();
           if (!name || /[\\/"]/.test(name)) throw new HubError("a hub's name has no / \\ or quotes");
@@ -233,20 +253,40 @@ function stream(res: http.ServerResponse, abs: string, headers: http.OutgoingHtt
   s.once("error", () => { if (!res.headersSent) send(res, 404, { error: "not found" }); else res.destroy(); });
 }
 
-/** Opens a hub in its own Malachite through the paperboat CLI; the page goes to the URL it answers. */
-function openHub(dir: string): Promise<{ url: string }> {
+/** The paperboat CLI with --json: its answer, or its words as an error. */
+function paperboat(args: string[]): Promise<any> {
   return new Promise((resolve, reject) => {
-    const p = spawn(process.env.PAPERBOAT ?? "paperboat", ["app", "open", "malachite", dir, "--no-open", "--json"], { stdio: ["ignore", "pipe", "pipe"] });
+    const p = spawn(process.env.PAPERBOAT ?? "paperboat", [...args, "--json"], { stdio: ["ignore", "pipe", "pipe"] });
     let out = "", err = "";
     p.stdout.on("data", (d) => (out += d));
     p.stderr.on("data", (d) => (err += d));
-    p.on("error", () => reject(new HubError("opening another hub needs the paperboat CLI on PATH", 501)));
+    p.on("error", () => reject(new HubError("this needs the paperboat CLI on PATH", 501)));
     p.on("close", (code) => {
-      try { if (code === 0) return resolve({ url: JSON.parse(out).url }); } catch { /* not JSON */ }
-      reject(new HubError(`paperboat app open: ${(err || out).trim() || `exit ${code}`}`, 502));
+      let j: any;
+      try { j = JSON.parse(out); } catch { /* not JSON */ }
+      if (code === 0 && j !== undefined) return resolve(j);
+      reject(new HubError(`paperboat ${args.slice(0, 2).join(" ")}: ${(j?.error ?? (err || out)).toString().trim() || `exit ${code}`}`, 502));
     });
   });
 }
+
+/** Opens a hub in its own Malachite; the page goes to the URL it answers. */
+async function openHub(dir: string): Promise<{ url: string }> {
+  return { url: (await paperboat(["app", "open", "malachite", dir, "--no-open"])).url };
+}
+
+/** The apps installed beside Malachite (paperboat app list), asked at most every 10 s. */
+let appsSeen: { at: number; list: { name: string; label: string }[] } | undefined;
+async function installedApps() {
+  if (!appsSeen || Date.now() - appsSeen.at > 10_000) {
+    const all: { name: string; label: string; installed: unknown }[] = await paperboat(["app", "list"]);
+    appsSeen = { at: Date.now(), list: all.filter((a) => a.installed).map((a) => ({ name: a.name, label: a.label })) };
+  }
+  return appsSeen.list;
+}
+
+/** Where "Copy to <app>" puts a file: the app's own folder, outside every hub. */
+const copyFolder = (app: string) => path.join(os.homedir(), "Documents", "paperboat", app);
 
 /** A file written from the request's bytes: to a temporary name, then renamed, so a cut-off upload leaves
  *  nothing half-written. `replace` sends what was there to the trash first (it can come back); otherwise
