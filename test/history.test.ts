@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -67,3 +68,19 @@ test("changes in words", () => {
   assert.equal(describe(["A  a", "D  b"]), "Changed 2 files: a, b");
   assert.equal(describe(["M  log/2026-11.jsonl", "M  notes/a.md"]), "Edited notes/a.md", "the log is not news");
 });
+
+test("what no tree shows is not versioned, even what was before", () => on(tmp("pb-"), "lab", () => {
+  const hub = new Hub(tmp("hub-")), h = new History(hub);
+  fs.writeFileSync(path.join(hub.root, "a.md"), "one\n");
+  fs.mkdirSync(path.join(hub.root, ".julix"));
+  fs.writeFileSync(path.join(hub.root, ".julix", "fig.png"), "png");
+  h.save();
+  const tracked = () => execFileSync("git", ["ls-files"], { env: { ...process.env, GIT_DIR: h.gitDir, GIT_WORK_TREE: hub.root }, cwd: hub.root, encoding: "utf8" }).split("\n").filter(Boolean);
+  assert.deepEqual(tracked(), [".malachite/hub.toml", "a.md"]);
+  hub.set("ignore", "*.csv"); h.excludes();
+  fs.writeFileSync(path.join(hub.root, "b.csv"), "x");
+  execFileSync("git", ["add", "-f", "b.csv"], { env: { ...process.env, GIT_DIR: h.gitDir, GIT_WORK_TREE: hub.root }, cwd: hub.root });
+  h.save();
+  assert.deepEqual(tracked(), [".malachite/hub.toml", "a.md"], "a file versioned before it was ignored leaves the history");
+  assert.ok(fs.existsSync(path.join(hub.root, "b.csv")), "and stays on disk");
+}));

@@ -5,7 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { Index } from "../server/index.ts";
 import { split } from "../server/note.ts";
-import { Hub } from "../server/hub.ts";
+import { Hub, machine } from "../server/hub.ts";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "malachite-"));
 // a Paperboat home of their own: serving a hub records it in hubs.toml and keeps its history there
@@ -15,7 +15,7 @@ test("opening a folder makes it a hub and logs it", () => {
   const dir = tmp();
   const v = new Hub(dir);
   const conf = fs.readFileSync(path.join(dir, ".malachite", "hub.toml"), "utf8");
-  assert.match(conf, /schema = 2/);
+  assert.match(conf, /schema = 3/);
   assert.match(conf, /id = "h_/);
   assert.ok(!fs.existsSync(path.join(dir, "hub.toml")));
   assert.equal(v.events()[0] && "action" in v.events()[0] ? (v.events()[0] as any).action : "", "hub.created");
@@ -58,14 +58,14 @@ test("create, write, move, seal, trash; every one a log line", () => {
 
 test("a damaged log line is shown, not dropped", () => {
   const v = new Hub(tmp());
-  fs.appendFileSync(path.join(v.root, "log", `${new Date().toISOString().slice(0, 7)}.jsonl`), "{oops\n");
+  fs.appendFileSync(path.join(v.root, ".malachite", "log", machine(), `${new Date().toISOString().slice(0, 7)}.jsonl`), "{oops\n");
   assert.ok("damaged" in v.events()[0]);
 });
 
 test("the tree hides the cache, git and dotfiles; folders first", () => {
   const v = new Hub(tmp());
   for (const f of [".malachite/out/x.json", ".git/HEAD", ".hidden", "b.md", "a/z.md"]) { fs.mkdirSync(path.dirname(path.join(v.root, f)), { recursive: true }); fs.writeFileSync(path.join(v.root, f), ""); }
-  assert.deepEqual(v.tree().map((e) => e.name), ["a", "log", "b.md"]);
+  assert.deepEqual(v.tree().map((e) => e.name), ["a", "b.md"]);
 });
 
 test("the index resolves links and finds backlinks with their context", () => {
@@ -185,4 +185,34 @@ test("settings are set, checked and logged", () => {
   assert.throws(() => v.set("keep", "forever"), /keep is one of/);
   assert.throws(() => v.set("name", ""), /can't be empty/);
   assert.throws(() => v.set("id" as never, "x"), /not a hub setting/);
+});
+
+test("a schema 2 hub's log leaves the root for this machine's folder; the user's own files there stay", () => {
+  const dir = tmp();
+  fs.mkdirSync(path.join(dir, ".malachite"), { recursive: true });
+  fs.writeFileSync(path.join(dir, ".malachite", "hub.toml"), 'id = "h_old"\nname = "old"\nschema = 2\n');
+  fs.mkdirSync(path.join(dir, "log"));
+  fs.writeFileSync(path.join(dir, "log", "2026-10.jsonl"), '{"time":"2026-10-01T00:00:00Z","actor":"lab","action":"note.created"}\n');
+  const v = new Hub(dir);
+  assert.ok(!fs.existsSync(path.join(dir, "log")), "an emptied log/ goes");
+  assert.deepEqual(v.events().map((e: any) => e.action), ["hub.upgraded", "note.created"]);
+  assert.match(fs.readFileSync(path.join(dir, ".malachite", "hub.toml"), "utf8"), /schema = 3/);
+
+  const mine = tmp();
+  fs.mkdirSync(path.join(mine, ".malachite"), { recursive: true });
+  fs.writeFileSync(path.join(mine, ".malachite", "hub.toml"), 'id = "h_mine"\nschema = 2\n');
+  fs.mkdirSync(path.join(mine, "log"));
+  fs.writeFileSync(path.join(mine, "log", "pump.csv"), "t,v\n");
+  new Hub(mine);
+  assert.ok(fs.existsSync(path.join(mine, "log", "pump.csv")), "not a log of ours: left alone");
+});
+
+test("each machine logs to its own file; the log reads them as one, by time", () => {
+  const v = new Hub(tmp()), month = new Date().toISOString().slice(0, 7);
+  const other = path.join(v.root, ".malachite", "log", "other-machine");
+  fs.mkdirSync(other, { recursive: true });
+  fs.writeFileSync(path.join(other, `${month}.jsonl`), JSON.stringify({ time: "2000-01-01T00:00:00Z", actor: "x", action: "old" }) + "\n" + JSON.stringify({ time: "2999-01-01T00:00:00Z", actor: "x", action: "future" }) + "\n");
+  v.log("now");
+  assert.deepEqual(v.events().map((e: any) => e.action), ["future", "now", "hub.created", "old"]);
+  assert.ok(!fs.existsSync(path.join(v.root, "log")));
 });

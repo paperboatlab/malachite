@@ -528,7 +528,7 @@ export function App() {
           </Panel>
         )}
         {page === "log" && (
-          <Panel name="Activity log" count={`${log.length} events · log/*.jsonl`}>
+          <Panel name="Activity log" count={`${log.length} events · .malachite/log`}>
             <div className="lev big">{log.map((e, i) => <Ev key={i} e={e} path />)}</div>
           </Panel>
         )}

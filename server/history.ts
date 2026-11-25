@@ -6,15 +6,13 @@
 // bundles bring their past. People see versions and Restore.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import type { Hub } from "./hub.ts";
+import { machine, type Hub } from "./hub.ts";
 import { paperboatHome } from "./hubs.ts";
 
 export type Version = { id: string; time: string; author: string; what: string };
 
-/** This machine's name in the bundles: its host name, made safe for a file name. */
-export const machine = () => (process.env.MALACHITE_MACHINE ?? os.hostname()).replace(/[^\w.-]+/g, "-") || "machine";
+export { machine };
 
 export class History {
   readonly gitDir: string;
@@ -46,9 +44,10 @@ export class History {
     });
   }
 
-  /** What is never versioned: Malachite's own files (but hub.toml) and the hub's `ignore`. */
+  /** What is never versioned: what no file tree shows (dot files and folders: Malachite's own but hub.toml,
+   *  an app's own like `.julix/`) and the hub's `ignore`. */
   excludes() {
-    const lines = [".malachite/*", "!.malachite/hub.toml", "*.tmp", ...this.hub.conf.ignore.split(/\s+/).filter(Boolean)];
+    const lines = [".*", "!/.malachite/", "/.malachite/*", "!/.malachite/hub.toml", "*.tmp", ...this.hub.conf.ignore.split(/\s+/).filter(Boolean)];
     fs.mkdirSync(path.join(this.gitDir, "info"), { recursive: true });
     fs.writeFileSync(path.join(this.gitDir, "info", "exclude"), lines.join("\n") + "\n");
   }
@@ -59,6 +58,9 @@ export class History {
   save(what?: string): string | null {
     if (!this.ok) return null;
     this.git("add", "-A");
+    // files versioned before they were excluded (an older hub, a new `ignore`) leave the history from here on
+    const stale = this.git("ls-files", "-z", "-c", "-i", "--exclude-standard").split("\0").filter(Boolean);
+    if (stale.length) this.git("rm", "-q", "--cached", "--", ...stale);
     const status = this.git("status", "--porcelain").split("\n").filter(Boolean);
     if (!status.length) return null;
     this.git("commit", "-q", "--no-verify", "-m", what ?? describe(status));

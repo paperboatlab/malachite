@@ -3,4 +3,3 @@ dist/
 *.tmp
 .malachite/*
 !.malachite/hub.toml
-examples/*/log/
