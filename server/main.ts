@@ -13,7 +13,7 @@ import { bodyHash, parse, type Lang } from "./note.ts";
 import { NoSession, Sessions } from "./sessions.ts";
 import { History } from "./history.ts";
 import { Hub, HubError, SCHEMA, type HubKey } from "./hub.ts";
-import { defaultFolder, forget, infos, remember, tilde } from "./hubs.ts";
+import { conflictsIn, defaultFolder, forget, infos, placeOf, remember, tilde } from "./hubs.ts";
 
 export const DEFAULT_PORT = 30474;   // Malachite's home port (paperboat/apps.toml); other hubs get --port from the CLI (30500–30599)
 const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
@@ -34,7 +34,7 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
   const serving = path.join(hub.root, ".malachite", "serving.pid");
   fs.writeFileSync(serving, String(process.pid));
   process.on("exit", () => { try { if (fs.readFileSync(serving, "utf8") === String(process.pid)) fs.rmSync(serving); } catch { /* gone */ } });
-  const hubInfo = () => ({ ...hub.conf, root: hub.root, shown: tilde(hub.root), place: "local" as const });
+  const hubInfo = () => ({ ...hub.conf, root: hub.root, shown: tilde(hub.root), place: placeOf(hub.root), conflicts: conflictsIn(hub.root) });
   // the history: other machines' pasts first, then what changed while no Malachite was watching
   const history = new History(hub);
   history.merge();

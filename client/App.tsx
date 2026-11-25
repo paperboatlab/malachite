@@ -14,7 +14,7 @@ import { Plot2D, type PlotSeries } from "@paperboatlab/ui/plot";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { patch, split } from "../server/frontmatter.ts";
-import { api, listen, type Cell, type HubConf, type KnownHub, type Entry, type Item, type Lang, type Links, type LogEvent, type NoteData, type Props, type Run } from "./api.ts";
+import { api, listen, type Cell, type HubConf, type KnownHub, type Place, type Entry, type Item, type Lang, type Links, type LogEvent, type NoteData, type Props, type Run } from "./api.ts";
 import { fileMenu, type FileActions } from "./fileMenu.ts";
 import { FileGlyph, OWNER, TEXT, mediaOf, typeOf } from "./files.tsx";
 import { MediaEmbed } from "./Media.tsx";
@@ -116,7 +116,11 @@ export function App() {
   const reload = useCallback(() => { api.tree().then(setTree, fail); api.index().then(setItems, fail); }, [fail]);
   useEffect(() => {
     api.hubs().then(setHubs, () => setHubs([]));
-    api.hub().then((v) => { setHub(v); document.title = `${v.name} · Malachite`; },
+    api.hub().then((v) => {
+      setHub(v); document.title = `${v.name} · Malachite`;
+      if (v.conflicts.length) show({ title: `${v.conflicts.length === 1 ? "A conflict copy" : `${v.conflicts.length} conflict copies`} in ${v.name}`, state: "failed",
+        detail: `${v.conflicts.slice(0, 3).join(", ")}${v.conflicts.length > 3 ? ", …" : ""} · two machines changed the same file: keep what you want, trash the other` });
+    },
       (e) => show({ title: "Couldn't open the hub", detail: `${(e as Error).message ?? e} · the terminal running malachite says why`, state: "failed" }));
     reload();
   }, [reload, fail, show]);
@@ -256,10 +260,11 @@ export function App() {
   // the hub's files as the kit's tree rows
   const entries = useMemo(() => {
     const out: FileEntry[] = [];
-    const walk = (es: Entry[], depth: number) => { for (const e of es) { out.push({ path: e.path, name: e.name, depth, kind: e.kind === "dir" ? "folder" : "file" }); if (e.children) walk(e.children, depth + 1); } };
+    const conflict = new Set(hub?.conflicts ?? []);   // a sync client's copy: marked so it gets looked at
+    const walk = (es: Entry[], depth: number) => { for (const e of es) { out.push({ path: e.path, name: e.name, depth, kind: e.kind === "dir" ? "folder" : "file", ...(conflict.has(e.path) ? { badge: "conflict" } : {}) }); if (e.children) walk(e.children, depth + 1); } };
     walk(tree, 0);
     return out;
-  }, [tree]);
+  }, [tree, hub?.conflicts]);
 
   const runCell = (c: Cell) => { if (current) api.run(current, c.hash).then((r) => setRuns((m) => ({ ...m, [c.hash]: r })), fail); };
   const stopCell = (c: Cell) => { api.interrupt(c.lang).catch(fail); };
@@ -551,7 +556,7 @@ export function App() {
 }
 
 /** A hub as the kit draws it. */
-const kitHub = (h: { id: string; name: string; shown: string; place: "local" | "google-drive"; missing?: boolean }): KitHub => ({ id: h.id, name: h.name, place: h.place, path: h.shown, missing: h.missing });
+const kitHub = (h: { id: string; name: string; shown: string; place: Place; missing?: boolean; conflicts?: string[] }): KitHub => ({ id: h.id, name: h.name, place: h.place, path: h.shown, missing: h.missing, conflicts: h.conflicts?.length });
 
 /** A CSV's numeric columns against its first: what a run left behind, at a glance. */
 function CsvPlot({ text }: { text: string }) {
