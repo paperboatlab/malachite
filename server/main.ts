@@ -7,11 +7,11 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Control, ControlError } from "./control.ts";
+import { Control, ControlError, daemonPath } from "./control.ts";
 import { Index } from "./index.ts";
 import { bodyHash, parse, type Lang } from "./note.ts";
 import { NoSession, Sessions } from "./sessions.ts";
-import { Hub, HubError } from "./hub.ts";
+import { Hub, HubError, SCHEMA } from "./hub.ts";
 
 export const DEFAULT_PORT = 59210;   // paperboat/apps.toml
 const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
@@ -79,6 +79,8 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
       const route = `${req.method} ${url.pathname}`;
       switch (route) {
         case "GET /api/hub": return send(res, 200, { name: hub.name, root: hub.root, author: hub.author });
+        // About: the hub format, and Paperboat's version (null: not installed; left out: it didn't answer)
+        case "GET /api/about": return send(res, 200, { format: SCHEMA, paperboat: await control.call<{ version: string }>("hello").then((r) => r.version, () => (daemonPath() ? undefined : null)) });
         case "GET /api/tree": return send(res, 200, hub.tree());
         case "GET /api/index": return send(res, 200, index.list());
         case "GET /api/note": {

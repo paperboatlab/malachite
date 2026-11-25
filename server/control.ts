@@ -19,7 +19,7 @@ export function socketPath(env = process.env): string {
   return path.join(dir, "control.sock");
 }
 
-function daemonPath(env = process.env): string | null {
+export function daemonPath(env = process.env): string | null {
   if (env.PAPERBOATD) return env.PAPERBOATD;
   for (const dir of (env.PATH ?? "").split(path.delimiter)) {
     const p = path.join(dir, "paperboatd");

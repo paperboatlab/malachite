@@ -13,7 +13,7 @@ export type Trashed = { id: string; path: string; kind: "file" | "folder"; time:
 export class HubError extends Error { readonly status: number; constructor(message: string, status = 400) { super(message); this.status = status; } }
 
 const HIDDEN = new Set([".malachite", ".git", "node_modules", ".DS_Store"]);
-const SCHEMA = 1;
+export const SCHEMA = 1;
 
 /** "n_" and 12 base32 letters: stable across renames; time-ordered enough to read. */
 export const newId = (prefix = "n") => `${prefix}_${Date.now().toString(36)}${randomBytes(4).toString("hex")}`;
