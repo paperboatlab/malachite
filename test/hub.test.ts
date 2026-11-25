@@ -132,3 +132,27 @@ test("the trash: listed, restored (beside a newcomer), deleted, emptied; every o
   assert.deepEqual([v.trashed().length, (v.events(1)[0] as any).action], [0, "trash.emptied"]);
   assert.throws(() => v.restore("../../etc"), /no .* in the trash/);
 });
+
+test("media: byte ranges for seeking; uploads never overwrite (a replaced file goes to the trash)", async () => {
+  const { serve } = await import("../server/main.ts");
+  const { Control } = await import("../server/control.ts");
+  const dir = tmp();
+  const { server, hub } = serve(dir, 0, new Control(path.join(dir, "none.sock"), false));
+  await new Promise((r) => server.once("listening", r));
+  const base = `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`;
+  const up = (p: string, body: string, replace = false) => fetch(`${base}/api/upload?path=${encodeURIComponent(p)}${replace ? "&replace=1" : ""}`, { method: "POST", body, headers: { origin: base } }).then((r) => r.json());
+  assert.deepEqual(await up("media/clip.mp4", "0123456789"), { path: "media/clip.mp4" });
+  assert.deepEqual(await up("media/clip.mp4", "abc"), { path: "media/clip (2).mp4" });
+  let r = await fetch(`${base}/api/raw?path=media/clip.mp4`, { headers: { range: "bytes=2-5" } });
+  assert.deepEqual([r.status, r.headers.get("content-range"), r.headers.get("content-type"), await r.text()], [206, "bytes 2-5/10", "video/mp4", "2345"]);
+  r = await fetch(`${base}/api/raw?path=media/clip.mp4`, { headers: { range: "bytes=-3" } });
+  assert.equal(await r.text(), "789");
+  r = await fetch(`${base}/api/raw?path=media/clip.mp4`, { headers: { range: "bytes=20-" } });
+  assert.equal(r.status, 416);
+  await up("media/clip.mp4", "edited", true);
+  assert.equal(fs.readFileSync(hub.resolve("media/clip.mp4"), "utf8"), "edited");
+  assert.deepEqual(hub.trashed().map((t) => t.path), ["media/clip.mp4"]);
+  assert.equal((await fetch(`${base}/api/upload?path=.malachite/x.png`, { method: "POST", body: "x", headers: { origin: base } })).status, 400);
+  assert.ok(!fs.readdirSync(hub.resolve("media")).some((f) => f.endsWith(".tmp")));
+  server.close();
+});

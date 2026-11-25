@@ -19,7 +19,11 @@ const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
   ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".png": "image/png", ".webp": "image/webp",
   ".svg": "image/svg+xml", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".json": "application/json", ".pdf": "application/pdf",
+  ".avif": "image/avif", ".bmp": "image/bmp",
+  ".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime", ".ogv": "video/ogg",
+  ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".wav": "audio/wav", ".ogg": "audio/ogg", ".oga": "audio/ogg", ".flac": "audio/flac",
 };
+const UPLOAD_MAX = 2 ** 31;   // 2 GiB: a video from a lab camera, not a disk image
 
 export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control()) {
   const hub = new Hub(hubDir);
@@ -35,7 +39,7 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
   const watcher = fs.watch(hub.root, { recursive: true }, (_ev, f) => {
     if (!f) return;
     const rel = f.toString().split(path.sep).join("/");
-    if (rel.split("/").some((p) => p.startsWith(".") || p === "node_modules")) return;
+    if (rel.split("/").some((p) => p.startsWith(".") || p === "node_modules") || rel.endsWith(".tmp")) return;
     pending.add(rel);
     clearTimeout(timer);
     timer = setTimeout(() => {
@@ -65,6 +69,12 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
         return;
       }
       const q = (k: string) => { const v = url.searchParams.get(k); if (v === null) throw new HubError(`missing ${k}`); return v; };
+      // a file's bytes (a picture dropped in a note, an edited picture): before the JSON body is read
+      if (req.method === "POST" && url.pathname === "/api/upload") {
+        const p = await upload(req, hub, q("path"), url.searchParams.get("replace") === "1");
+        index.update(p);
+        return send(res, 200, { path: p });
+      }
       const body = req.method === "GET" ? {} : await json(req);
       const route = `${req.method} ${url.pathname}`;
       switch (route) {
@@ -104,7 +114,7 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
         case "GET /api/log": return send(res, 200, hub.events(Number(url.searchParams.get("limit") ?? 200)));
         case "GET /api/raw": {
           const abs = hub.resolve(q("path"));
-          return stream(res, abs, { "content-type": TYPES[path.extname(abs).toLowerCase()] ?? "application/octet-stream", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:", "x-content-type-options": "nosniff" });
+          return stream(res, abs, { "content-type": TYPES[path.extname(abs).toLowerCase()] ?? "application/octet-stream", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:", "x-content-type-options": "nosniff", "cache-control": "no-cache" }, req.headers.range);
         }
         case "POST /api/run": return send(res, 200, sessions.run(String(body.path), String(body.hash)));
         case "POST /api/interrupt": return send(res, 200, await sessions.interrupt(lang(body.lang)));
@@ -152,10 +162,49 @@ function file(res: http.ServerResponse, p: string) {
 }
 
 /** A file to the response. One that is gone (moved, deleted, mid-checkout) is a 404, never a crash. */
-function stream(res: http.ServerResponse, abs: string, headers: http.OutgoingHttpHeaders) {
-  const s = fs.createReadStream(abs);
-  s.once("open", () => { res.writeHead(200, headers); s.pipe(res); });
+/** A file, whole or (a video seeking) the byte range asked for. */
+function stream(res: http.ServerResponse, abs: string, headers: http.OutgoingHttpHeaders, range?: string) {
+  let size: number;
+  try { const st = fs.statSync(abs); if (!st.isFile()) throw new Error("not a file"); size = st.size; } catch { return send(res, 404, { error: "not found" }); }
+  const m = range ? /^bytes=(\d*)-(\d*)$/.exec(range.trim()) : null;
+  let start = 0, end = size - 1, status = 200;
+  if (m && (m[1] || m[2])) {
+    if (m[1] === "") { start = Math.max(0, size - Number(m[2])); }
+    else { start = Number(m[1]); if (m[2]) end = Math.min(Number(m[2]), size - 1); }
+    if (start > end || start >= size) { res.writeHead(416, { "content-range": `bytes */${size}` }); return res.end(); }
+    status = 206;
+  }
+  const s = fs.createReadStream(abs, size ? { start, end } : {});
+  s.once("open", () => {
+    res.writeHead(status, { ...headers, "accept-ranges": "bytes", "content-length": size ? end - start + 1 : 0, ...(status === 206 ? { "content-range": `bytes ${start}-${end}/${size}` } : {}) });
+    s.pipe(res);
+  });
   s.once("error", () => { if (!res.headersSent) send(res, 404, { error: "not found" }); else res.destroy(); });
+}
+
+/** A file written from the request's bytes: to a temporary name, then renamed, so a cut-off upload leaves
+ *  nothing half-written. `replace` sends what was there to the trash first (it can come back); otherwise
+ *  a taken name becomes "<name> (2)". Returns the path written. */
+async function upload(req: http.IncomingMessage, hub: Hub, rel: string, replace: boolean): Promise<string> {
+  let to = rel;
+  if (!path.extname(to) || /(^|\/)\./.test(to)) throw new HubError(`${rel}: a file name with its type, outside dot folders`);
+  if (fs.existsSync(hub.resolve(to))) {
+    if (replace) hub.trash(to);
+    else { const ext = path.extname(to), stem = to.slice(0, -ext.length); for (let n = 2; fs.existsSync(hub.resolve(to)); n++) to = `${stem} (${n})${ext}`; }
+  }
+  const abs = hub.resolve(to), tmp = `${abs}.${process.pid}.upload.tmp`;
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  await new Promise<void>((resolve, reject) => {
+    let n = 0;
+    const out = fs.createWriteStream(tmp);
+    req.on("data", (d: Buffer) => { n += d.length; if (n > UPLOAD_MAX) { req.destroy(); out.destroy(); reject(new HubError("too large: 2 GiB at most", 413)); } });
+    req.on("error", reject); out.on("error", reject);
+    out.on("finish", () => resolve());
+    req.pipe(out);
+  }).catch((e) => { fs.rmSync(tmp, { force: true }); throw e; });
+  fs.renameSync(tmp, abs);
+  hub.log(replace && to === rel ? "file.replaced" : "file.added", to, { bytes: fs.statSync(abs).size });
+  return to;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1])) {

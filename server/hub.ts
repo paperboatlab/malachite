@@ -53,7 +53,7 @@ export class Hub {
   tree(dir = this.root): Entry[] {
     const out: Entry[] = [];
     for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (HIDDEN.has(d.name) || d.name.startsWith(".")) continue;
+      if (HIDDEN.has(d.name) || d.name.startsWith(".") || d.name.endsWith(".tmp")) continue;   // a write in progress
       const abs = path.join(dir, d.name);
       if (d.isDirectory()) out.push({ path: this.rel(abs), name: d.name, kind: "dir", children: this.tree(abs) });
       else if (d.isFile()) { const st = fs.statSync(abs); out.push({ path: this.rel(abs), name: d.name, kind: "file", size: st.size, mtime: st.mtimeMs }); }

@@ -99,7 +99,6 @@ a.wl.miss, .wl.miss { color: var(--text-muted); text-decoration-style: dashed; }
 .fileview { padding: 20px 28px; display: flex; flex-direction: column; gap: 14px; }
 .fcard { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-raised); }
 .fcard b { font: 500 13px var(--font-mono); } .fcard small { grid-column: 2; color: var(--text-muted); }
-.fimg { max-width: 100%; border-radius: var(--radius-md); }
 .ftext { margin: 0; padding: 12px 14px; background: var(--surface-well); box-shadow: var(--well-shadow); border-radius: var(--radius-md); font: 12.5px/1.6 var(--font-mono); white-space: pre-wrap; overflow: auto; }
 
 /* the Links card */
@@ -244,3 +243,22 @@ table.t tbody tr:hover { background: color-mix(in srgb, var(--surface-raised) 60
 .trow:hover .tk, .trow:focus-within .tk { pointer-events: auto; }
 .trow:hover .tk, .trow:focus-within .tk { opacity: 1; }
 .trash .tfoot { margin-top: auto; position: sticky; bottom: 0; background: var(--surface-panel); display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); font: 11.5px var(--font-mono); color: var(--text-muted); }
+
+/* media (Media.tsx): a picture with its keys on hover, a video or a sound in the kit's player */
+.media-slot { display: block; }
+.media { display: block; margin: 12px 0; }
+figure.media.img { position: relative; width: fit-content; max-width: 100%; margin: 12px auto; }
+figure.media.img img { display: block; max-width: 100%; max-height: 70vh; border-radius: var(--radius-md); background: var(--surface-sunken); }
+figure.media.img:fullscreen { display: grid; place-items: center; background: #000; max-width: none; margin: 0; }
+figure.media.img:fullscreen img { max-height: 100vh; border-radius: 0; }
+figure.media.img .mkeys { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; padding: 3px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--surface-raised) 92%, transparent); box-shadow: var(--shadow-1); opacity: 0; transition: opacity var(--motion); }
+figure.media.img:hover .mkeys, figure.media.img:focus-within .mkeys { opacity: 1; }
+figure.media.img:fullscreen .mkeys { display: none; }
+figure.media.img figcaption { margin-top: 6px; font-size: 12px; color: var(--text-muted); text-align: center; }
+.embed-card.miss { border-style: dashed; cursor: default; }
+.fileview .media { margin: 0; }
+.imgedit-overlay { position: fixed; inset: 0; z-index: 80; display: flex; flex-direction: column; background: var(--surface-panel); }
+.imgedit-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.imgedit-head b { font: 500 13px var(--font-mono); }
+.imgedit-head small { margin-left: auto; color: var(--text-muted); font-size: 12px; }
+.imgedit-overlay .pb-imgedit { flex: 1; }

@@ -2,7 +2,8 @@
 // it rendered with its cells runnable in place; Edit is the Markdown itself.
 import { Icon, Key, RemoveKey, Spinner, type IconName, type MenuEntry } from "@paperboatlab/ui";
 import { Editor, julia, python, type EditorSettings } from "@paperboatlab/ui/editor";
-import { useMemo } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { Cell, NoteData, Output, Props, Run } from "./api.ts";
 import { renderer, type Resolve } from "./markdown.ts";
 import { MenuChip } from "./MenuChip.tsx";
@@ -145,9 +146,17 @@ function segments(body: string, cells: Cell[]) {
   return out;
 }
 
-export function ReadView({ note, runs, resolve, look, onLink, onRun, onStop }: {
+export function ReadView({ note, runs, resolve, look, onLink, onRun, onStop, media }: {
   note: NoteData; runs: Record<string, Run>; resolve: Resolve; look: CodeLook; onLink: (target: string, missing: boolean) => void; onRun: (c: Cell) => void; onStop: (c: Cell) => void;
+  /** A picture, a video or a sound the Markdown embeds (markdown.ts leaves a slot for it). */
+  media: (path: string, alt: string) => ReactNode;
 }) {
+  const doc = useRef<HTMLElement>(null), [slots, setSlots] = useState<HTMLElement[]>([]);
+  // the slots of the HTML just rendered: a new body makes new ones
+  useLayoutEffect(() => {
+    const found = [...(doc.current?.querySelectorAll<HTMLElement>(".media-slot") ?? [])];
+    setSlots((s) => (s.length === found.length && s.every((x, i) => x === found[i]) ? s : found));
+  });
   const md = useMemo(() => renderer(resolve, note.path), [resolve, note.path]);
   const parts = useMemo(() => segments(note.body, note.cells), [note.body, note.cells]);
   const click = (e: React.MouseEvent) => {
@@ -155,11 +164,12 @@ export function ReadView({ note, runs, resolve, look, onLink, onRun, onStop }: {
     if (a) { e.preventDefault(); onLink(a.dataset.wl!, a.classList.contains("miss")); }
   };
   return (
-    <article className="doc" onClick={click}>
+    <article ref={doc} className="doc" onClick={click}>
       <Properties props={note.props} intact={note.intact} />
       {parts.map((p, i) => "md" in p
         ? <div key={i} dangerouslySetInnerHTML={{ __html: md(p.md) }} />
         : <CellView key={`${i}-${p.cell.hash}`} cell={p.cell} n={p.n} run={runs[p.cell.hash] ?? note.outputs[p.cell.hash]} sealed={note.sealed} look={look} onRun={() => onRun(p.cell)} onStop={() => onStop(p.cell)} />)}
+      {slots.map((el, i) => createPortal(media(el.dataset.path!, el.dataset.alt ?? ""), el, `m${i}`))}
     </article>
   );
 }

@@ -3,12 +3,16 @@
 // link may only go to http(s), mailto or inside the hub.
 import { INLINE_MATH, mathHtml } from "@paperboatlab/ui";
 import { Marked, type Tokens } from "marked";
-import { IMAGE, OWNER, typeOf } from "./files.tsx";
+import { OWNER, mediaOf, typeOf } from "./files.tsx";
 
 export type Resolve = (link: string) => string | null;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const raw = (p: string) => `/api/raw?path=${encodeURIComponent(p)}`;
 const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
+/** Where a picture, a video or a sound goes: ReadView draws the kit's player or the picture into it. */
+const slot = (p: string, alt: string) => `<span class="media-slot" data-path="${esc(p)}" data-alt="${esc(alt)}"></span>`;
+/** a/b/../c → a/c */
+const normal = (p: string) => p.split("/").reduce<string[]>((o, s) => (s === ".." ? o.slice(0, -1) : s && s !== "." ? [...o, s] : o), []).join("/");
 
 type Wiki = Tokens.Generic & { embed: boolean; target: string; label: string };
 type Math = Tokens.Generic & { tex: string };
@@ -49,7 +53,7 @@ export function renderer(resolve: Resolve, here: string) {
         const p = resolve(target);
         if (!p) return `<a class="wl miss" data-wl="${esc(target)}" title="Not written yet: click to create">${esc(label)}</a>`;
         const type = typeOf(p);
-        if (embed && IMAGE.has(type)) return `<img class="embed-img" src="${raw(p)}" alt="${esc(label)}">`;
+        if (embed && mediaOf(p)) return slot(p, label === target ? "" : label);   // a picture, a video, a sound: drawn by the page
         if (embed && type !== "md") {
           const owner = OWNER[type];
           return `<span class="embed-card" data-wl="${esc(p)}"><b>${esc(base(p))}</b><small>${owner ? `drawn by ${owner} once it is installed; until then its name and type` : "a file in the hub"}</small></span>`;
@@ -68,7 +72,8 @@ export function renderer(resolve: Resolve, here: string) {
       image(t: Tokens.Image) {
         if (/^https?:/i.test(t.href)) return `<img src="${esc(t.href)}" alt="${esc(t.text)}">`;
         if (/^[a-z][\w+.-]*:/i.test(t.href)) return esc(t.text);
-        return `<img src="${raw(decodeURI(dir + t.href))}" alt="${esc(t.text)}">`;
+        const p = normal(decodeURI(dir + t.href));
+        return mediaOf(p) ? slot(p, t.text) : `<img src="${raw(p)}" alt="${esc(t.text)}">`;
       },
     },
   });

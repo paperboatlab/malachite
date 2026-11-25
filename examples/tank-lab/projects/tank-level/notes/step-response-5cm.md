@@ -14,6 +14,8 @@ tags: [tank, step, level-sensor]
 Second step test on the tank after recalibrating the level sensor (see [[protocol-level-sensor]]).
 Setpoint from 0 to **5 cm**, pump limited to 60 %, PID gains from [[pump-check]].
 
+![[tank-rig.jpg|The rig on bench 2: pump, tank, outlet valve, level sensor]]
+
 ## Model
 
 The tank as a first-order lag, its level $h$ driven by the pump command $u$ with gain $K$ and time constant $\tau$:
@@ -23,6 +25,10 @@ $$
 $$
 
 ## Run
+
+The step as the camera saw it (sped up from the record):
+
+![[step-5cm.webm]]
 
 The run's level, read from its record, overshoot and settling time:
 
