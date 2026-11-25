@@ -56,6 +56,7 @@ export class Sessions {
   private session(lang: Lang): Promise<Session> {
     let p = this.sessions.get(lang);
     if (!p) {
+      this.emit({ type: "session", lang, state: "starting" });
       p = (async () => {
         const lease = await this.control.call<Lease>("acquire", { runtime: lang, mode: "session", project: this.hub.root, owner: `malachite:${this.hub.name}` });
         if (lease.state === "failed") throw new Error(lease.error ?? `${lang} failed to start`);
@@ -64,7 +65,7 @@ export class Sessions {
         this.emit({ type: "session", lang, state: "running" });
         return { lease, rt };
       })();
-      p.catch(() => this.sessions.delete(lang));
+      p.catch((e) => { this.sessions.delete(lang); this.emit({ type: "session", lang, state: "failed", error: String(e?.message ?? e) }); });
       this.sessions.set(lang, p);
     }
     return p;

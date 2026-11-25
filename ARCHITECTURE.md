@@ -52,7 +52,7 @@ flowchart LR
   (board, list, timeline over `views/*.toml`), `Side.tsx` (the Links card, the
   runtimes key and its peek), `markdown.ts` (marked with wikilinks and embeds), `files.tsx`, `api.ts`.
 - **From the kit** (`@paperboatlab/ui`): the shell's parts (Rail, Panel, PanelsKey, Search, Menu, Dialog,
-  ThemePicker, Toasts), the file tree (`/files`), the editor with its languages and themes (`/editor`:
+  ThemePicker, Toasts, Notifications), the file tree (`/files`), the editor with its languages and themes (`/editor`:
   notes as Markdown, cells read-only, code files linted and completed by the hub's session through
   `POST /api/ask`), the plot (`/plot`), the graph layout (`/canvas`, drawn with React Flow). Malachite
   draws none of these itself.
