@@ -1,6 +1,7 @@
-// Markdown to HTML for the Read view: `marked`, plus wikilinks (`[[note]]`, `[[note|text]]`) and embeds
-// (`![[file]]`). A note is someone's text, maybe from a cloned hub: raw HTML is shown as text and a
+// Markdown to HTML for the Read view: `marked`, plus wikilinks (`[[note]]`, `[[note|text]]`), embeds
+// (`![[file]]`) and math (`$…$`, `$$…$$`, the kit's KaTeX, as Live draws it). A note is someone's text, maybe from a cloned hub: raw HTML is shown as text and a
 // link may only go to http(s), mailto or inside the hub.
+import { INLINE_MATH, mathHtml } from "@paperboatlab/ui";
 import { Marked, type Tokens } from "marked";
 import { IMAGE, OWNER, typeOf } from "./files.tsx";
 
@@ -10,12 +11,32 @@ const raw = (p: string) => `/api/raw?path=${encodeURIComponent(p)}`;
 const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 
 type Wiki = Tokens.Generic & { embed: boolean; target: string; label: string };
+type Math = Tokens.Generic & { tex: string };
+const INLINE = new RegExp(`^${INLINE_MATH.source}`);
 
 export function renderer(resolve: Resolve, here: string) {
   const dir = here.includes("/") ? here.slice(0, here.lastIndexOf("/") + 1) : "";
   const m = new Marked({ gfm: true });
   m.use({
     extensions: [{
+      name: "mathBlock",
+      level: "block",
+      start: (src: string) => src.match(/^\$\$/m)?.index,
+      tokenizer(src: string) {
+        const x = /^\$\$([\s\S]+?)\$\$[ \t]*(?:\n|$)/.exec(src);
+        if (x) return { type: "mathBlock", raw: x[0], tex: x[1].trim() } as Math;
+      },
+      renderer: (t) => `<div class="math-block">${mathHtml((t as Math).tex, true)}</div>`,
+    }, {
+      name: "math",
+      level: "inline",
+      start: (src: string) => src.match(/(?<![\\$])\$(?![\s$])/)?.index,
+      tokenizer(src: string) {
+        const x = INLINE.exec(src);
+        if (x) return { type: "math", raw: x[0], tex: x[1] } as Math;
+      },
+      renderer: (t) => mathHtml((t as Math).tex),
+    }, {
       name: "wiki",
       level: "inline",
       start: (src: string) => src.match(/!?\[\[/)?.index,

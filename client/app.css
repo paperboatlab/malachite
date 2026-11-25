@@ -226,3 +226,6 @@ table.t tbody tr:hover { background: color-mix(in srgb, var(--surface-raised) 60
 .bar2.done { background: var(--surface-sunken); border-style: dashed; }
 .ms { position: absolute; top: 13px; width: 13px; height: 13px; box-sizing: border-box; transform: rotate(45deg); background: var(--surface-raised); border: 1.5px solid var(--line-ink); cursor: pointer; }
 .today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); z-index: 2; pointer-events: none; }
+
+/* math in Read (Live draws the same, the kit's .cm-lp-math-block) */
+.doc .math-block { margin: 12px 0; text-align: center; overflow-x: auto; }
