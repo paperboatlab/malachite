@@ -3,7 +3,7 @@
 // slim bars. The parts are the kit's (@paperboatlab/ui): the file tree, the editor and its languages, the
 // plot, the canvas layout; Malachite brings the hub, its notes and cells. Files are the record.
 import {
-  AppMark, Dialog, Icon, Key, Menu, Panel, PanelsKey, Rail, Search, Segmented, ThemePicker, Toasts, chordMatches, readStored, typing, useTheme, useToasts, writeStored,
+  AppMark, Dialog, Icon, Key, Menu, Notifications, Panel, PanelsKey, Rail, Search, Segmented, ThemePicker, Toasts, chordMatches, readStored, typing, useTheme, useToasts, writeStored,
   type MenuEntry, type SearchItem, type Theme,
 } from "@paperboatlab/ui";
 import { DEFAULT_EDITOR_SETTINGS, Editor, TabMenu, afterClose, languageFor, livePreview, markdown, orderTabs, tabMenu, type Session } from "@paperboatlab/ui/editor";
@@ -89,10 +89,13 @@ export function App() {
   const [log, setLog] = useState<LogEvent[]>([]);
   const [search, setSearch] = useState(false);
   const [ask, setAsk] = useState<Ask | null>(null);
-  const { toasts, show, dismiss } = useToasts();
+  const notes = useToasts();
+  const { toasts, show, dismiss } = notes;
   const fail = useCallback((e: unknown) => show({ title: "Couldn't do that", detail: String((e as Error).message ?? e), state: "failed" }), [show]);
   const currentRef = useRef(current);
   currentRef.current = current;
+  const sessionNote = useRef<Partial<Record<Lang, number>>>({});
+  const saveNote = useRef<number | undefined>(undefined);   // a failed save's toast; the next save that works ends it
 
   useEffect(() => writeStored("paperboat.theme", theme), [theme]);
   useEffect(() => writeStored("malachite.rail.wide", wide), [wide]);
@@ -102,7 +105,11 @@ export function App() {
   const strip = useMemo(() => orderTabs(tabs, pinned), [tabs, pinned]);
 
   const reload = useCallback(() => { api.tree().then(setTree, fail); api.index().then(setItems, fail); }, [fail]);
-  useEffect(() => { api.hub().then((v) => { setHub(v); document.title = `${v.name} · Malachite`; }, fail); reload(); }, [reload, fail]);
+  useEffect(() => {
+    api.hub().then((v) => { setHub(v); document.title = `${v.name} · Malachite`; },
+      (e) => show({ title: "Couldn't open the hub", detail: `${(e as Error).message ?? e} · the terminal running malachite says why`, state: "failed" }));
+    reload();
+  }, [reload, fail, show]);
 
   const load = useCallback((p: string | null) => {
     if (!p) { setNote(null); setPlain(null); setLinks(null); return; }
@@ -131,13 +138,19 @@ export function App() {
       setPeekVersion((v) => v + 1);
     } else if (e.type === "session") {
       if (e.state === "stopped") setRunning((m) => ({ ...m, [e.lang]: false }));
+      // a session starting is background work (a container may be pulled): one toast, working, then its end
+      const name = e.lang === "julia" ? "Julia" : "Python", id = sessionNote.current[e.lang as Lang];
+      if (e.state === "starting") sessionNote.current[e.lang as Lang] = show({ title: `Starting the ${name} session`, detail: "the cell runs once it is up", state: "working" });
+      else if (id && e.state === "running") show({ id, title: `${name} session started`, state: "done" });
+      else if (id && e.state === "failed") show({ id, title: `${name} session didn't start`, detail: `${e.error} · the Runtimes key in the bar`, state: "failed" });
+      if (e.state !== "starting") delete sessionNote.current[e.lang as Lang];
       setPeekVersion((v) => v + 1);
     } else if (e.type === "log") {
       setLog((l) => [e.event, ...l].slice(0, 300));
       const c = currentRef.current;
       if (c && typeOf(c) === "md") api.links(c).then((l) => currentRef.current === c && setLinks(l), () => {});
     }
-  }), [reload, load]);
+  }), [reload, load, show]);
   useEffect(() => { if (page === "log") api.log().then(setLog, fail); }, [page, fail]);
 
   /** Opens a file in a tab (to the side: behind the current one); a note opens in Read unless asked. */
@@ -176,8 +189,12 @@ export function App() {
       await api.save(p, text);
       setDraft((d) => (d === text ? null : d));   // typed on while it saved: that stays to save next
       api.note(p).then((n) => currentRef.current === p && setNote(n), () => {});   // the note as saved (properties, cells)
-    } catch (e) { fail(e); }
-  }, [fail]);
+      if (saveNote.current) show({ id: saveNote.current, title: "Saved", detail: p, state: "done" });
+      saveNote.current = undefined;
+    } catch (e) {
+      saveNote.current = show({ id: saveNote.current, title: `Couldn't save ${nameOf(p)}`, detail: `${(e as Error).message ?? e} · what you typed is still here; Ctrl S tries again`, state: "failed" });
+    }
+  }, [show]);
   // save what is typed after a pause (and on Ctrl+S); the file is the record
   useEffect(() => {
     if (draft === null || !current) return;
@@ -200,10 +217,10 @@ export function App() {
       title: "Rename", label: "Path in the hub", value: p, ok: "Rename",
       run: (to) => to !== p && api.move(p, to).then(() => { reload(); setTabs((t) => t.map((x) => (x === p ? to : x))); setPinned((s) => new Set([...s].map((x) => (x === p ? to : x)))); if (current === p) setCurrent(to); }, fail),
     }),
-    trash: (p) => setAsk({ title: `Move ${p} to the trash?`, danger: true, ok: "Move to trash", run: () => api.trash(p).then(() => { reload(); closeTabs([p]); setTrashVersion((n) => n + 1); show({ title: "Moved to the trash", detail: `${p} · the trash key in the hub card brings it back`, state: "done" }); }, fail) }),
+    trash: (p) => setAsk({ title: `Move ${p} to the trash?`, danger: true, ok: "Move to trash", run: () => api.trash(p).then(() => { reload(); closeTabs([p]); setTrashVersion((n) => n + 1); }, fail) }),
     seal: (p) => setAsk({
       title: `Seal ${p}?`, ok: "Seal", danger: true,
-      run: () => api.seal(p).then(() => { load(p); show({ title: "Sealed", detail: `${p}: its body is frozen and hashed; corrections go in a new note`, state: "done" }); }, fail),
+      run: () => api.seal(p).then(() => load(p), fail),
     }),
     copy: (text, what) => navigator.clipboard.writeText(text).then(() => show({ title: `${what} copied`, detail: text, state: "done" }), fail),
     reveal: (p) => { api.reveal(p).catch(fail); },
@@ -285,7 +302,7 @@ export function App() {
     const v = liveView.current;
     if (!v || !current || note?.sealed) return;
     const dir = dirOf(current), stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-"), lines: string[] = [];
-    show({ id: 9001, title: `Adding ${files.length === 1 ? files[0].name || "a file" : `${files.length} files`}`, state: "working" });
+    const id = show({ title: `Adding ${files.length === 1 ? files[0].name || "a file" : `${files.length} files`}`, state: "working" });
     try {
       for (const [i, f] of files.entries()) {
         const ext = f.name.includes(".") ? "" : `.${(f.type.split("/")[1] ?? "bin").replace("jpeg", "jpg").replace(/\W.*/, "")}`;
@@ -299,8 +316,8 @@ export function App() {
       const insert = `${line.text.trim() ? "\n" : ""}${lines.join("\n")}\n`;
       v.dispatch({ changes: { from: line.to, insert }, selection: { anchor: line.to + insert.length } });
       reload();
-      show({ id: 9001, title: `Added ${lines.length === 1 ? "a file" : `${lines.length} files`}`, detail: dir || "the hub's root", state: "done" });
-    } catch (e) { show({ id: 9001, title: "Couldn't add it", detail: String((e as Error).message ?? e), state: "failed" }); }
+      show({ id, title: `Added ${lines.length === 1 ? "a file" : `${lines.length} files`}`, detail: dir || "the hub's root", state: "done" });
+    } catch (e) { show({ id, title: "Couldn't add it", detail: `${(e as Error).message ?? e} · the note is unchanged`, state: "failed" }); }
   };
   const dropExt = useMemo(() => EditorView.domEventHandlers({
     drop(e, view) {
@@ -388,6 +405,7 @@ export function App() {
           {page === "notes" && <PanelsKey layout={LAYOUT} onToggle={(id) => (id === "l" ? setHideL : setHideR)((h) => !h)}
             panels={[{ id: "l", label: "Files", keys: "Ctrl B", shown: !hideL }, { id: "r", label: "Links", keys: "Ctrl Alt B", shown: !hideR }]} />}
           <span className="lsep" />
+          <Notifications {...notes} />
           <ThemePicker theme={theme} onChange={setTheme} />
         </span>
       </header>
@@ -396,11 +414,11 @@ export function App() {
         pages={[{ id: "notes", label: "Notes", icon: "a-notes", keys: "Alt+1", count: nRunning ? "live" : mdCount }, { id: "views", label: "Views", icon: "a-views", keys: "Alt+2" },
           { id: "graph", label: "Graph", icon: "a-trace", keys: "Alt+3" }, { id: "log", label: "Log", icon: "a-log", keys: "Alt+4" }]}
         foot={[{ id: "search", label: "Search", icon: "search", keys: "Ctrl+K" }, { id: "settings", label: "Settings", icon: "a-settings" }, { id: "help", label: "Help", icon: "question", keys: "F1" }]}
-        onFoot={(id) => { if (id === "search") setSearch(true); else show({ title: id === "settings" ? "Settings" : "Help", detail: "Not in v0.1: the hub's settings are hub.toml; the guide is the README.", state: "done" }); }} />
+        onFoot={(id) => { if (id === "search") setSearch(true); else show({ title: id === "settings" ? "Settings" : "Help", detail: "Not in v0.1: the hub's settings are hub.toml; the guide is the README." }); }} />
 
       <main className="pages">
         {page === "notes" && (
-          <div className="notes">
+          <div className="notes-page">
             <Panel name={trashOpen ? "Trash" : hub?.name ?? "Hub"} count={trashOpen ? undefined : `${items.length}`} side="left" hidden={hideL} onHidden={setHideL} icon="a-notes" width={262}
               head={<span className="tools">
                 {!trashOpen && <><Key size="sm" kind="quiet" round icon="new-file" label="New note (Ctrl N)" onClick={() => newNote("")} /><Key size="sm" kind="quiet" round icon="new-folder" label="New folder" onClick={() => actions.newFolder("")} /></>}
@@ -408,7 +426,7 @@ export function App() {
               </span>}>
               {trashOpen ? <TrashList version={trashVersion} fail={fail}
                 confirm={(title, note, ok, run) => setAsk({ title, note, danger: true, ok, run })}
-                onRestored={(p, was) => { reload(); show({ title: "Restored", detail: p === was ? p : `${was} as ${p} (its name was taken)`, state: "done" }); }} />
+                onRestored={(p, was) => { reload(); if (p !== was) show({ title: "Restored under a new name", detail: `${was} as ${p}: its name was taken`, state: "done" }); }} />
               : <FileTree entries={entries} active={revealed ?? current ?? undefined} ariaLabel="Hub" menu={(e) => fileMenu(e, actions)}
                 actions={{
                   onOpen: (e) => open(e.path), onRename: (e) => actions.rename(e.path), onDelete: (e) => actions.trash(e.path),
