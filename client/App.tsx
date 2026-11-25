@@ -3,10 +3,10 @@
 // slim bars. The parts are the kit's (@paperboatlab/ui): the file tree, the editor and its languages, the
 // plot, the canvas layout; Malachite brings the hub, its notes and cells. Files are the record.
 import {
-  AppMark, Dialog, Key, Menu, Panel, PanelsKey, Rail, Search, Segmented, ThemePicker, Toasts, chordMatches, readStored, typing, useTheme, useToasts, writeStored,
+  AppMark, Dialog, Icon, Key, Menu, Panel, PanelsKey, Rail, Search, Segmented, ThemePicker, Toasts, chordMatches, readStored, typing, useTheme, useToasts, writeStored,
   type MenuEntry, type SearchItem, type Theme,
 } from "@paperboatlab/ui";
-import { DEFAULT_EDITOR_SETTINGS, Editor, languageFor, livePreview, markdown, type Session } from "@paperboatlab/ui/editor";
+import { DEFAULT_EDITOR_SETTINGS, Editor, TabMenu, afterClose, languageFor, livePreview, markdown, orderTabs, tabMenu, type Session } from "@paperboatlab/ui/editor";
 import { EditorView } from "@codemirror/view";
 import { FileTree, type FileEntry } from "@paperboatlab/ui/files";
 import { Plot2D, type PlotSeries } from "@paperboatlab/ui/plot";
@@ -47,6 +47,7 @@ const normalise = (p: string) => p.split("/").reduce<string[]>((o, s) => (s === 
 type Ask = { title: string; label?: string; value?: string; danger?: boolean; note?: string; ok: string; run: (v: string) => void };
 const isTheme = (v: unknown): v is Theme => v === "light" || v === "dark" || v === "system";
 const isBool = (v: unknown): v is boolean => typeof v === "boolean";
+const isStr = (v: unknown): v is string => typeof v === "string";
 const isList = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
 const dirOf = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
 const nameOf = (p: string) => p.slice(p.lastIndexOf("/") + 1);
@@ -70,7 +71,10 @@ export function App() {
   const [hideL, setHideL] = useState(false), [hideR, setHideR] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false), [trashVersion, setTrashVersion] = useState(0);
   const [tabs, setTabs] = useState<string[]>(() => readStored("malachite.tabs", isList) ?? []);
-  const [current, setCurrent] = useState<string | null>(() => readStored("malachite.tabs", isList)?.[0] ?? null);
+  const [current, setCurrent] = useState<string | null>(() => readStored("malachite.tab", isStr) ?? readStored("malachite.tabs", isList)?.[0] ?? null);
+  const [pinned, setPinned] = useState<ReadonlySet<string>>(() => new Set(readStored("malachite.pinned", isList) ?? []));
+  const [tabAt, setTabAt] = useState<{ path: string; x: number; y: number } | null>(null);   // the tab whose menu is open
+  const [revealed, setRevealed] = useState<string | null>(null);   // Reveal in Files: the row the tree shows
   const [note, setNote] = useState<NoteData | null>(null);
   const [plain, setPlain] = useState<string | null>(null);   // a text file that isn't a note
   const [mode, setMode] = useState<Mode>("live");
@@ -92,7 +96,10 @@ export function App() {
 
   useEffect(() => writeStored("paperboat.theme", theme), [theme]);
   useEffect(() => writeStored("malachite.rail.wide", wide), [wide]);
-  useEffect(() => writeStored("malachite.tabs", current ? [current, ...tabs.filter((t) => t !== current)] : tabs), [tabs, current]);
+  useEffect(() => writeStored("malachite.tabs", tabs), [tabs]);
+  useEffect(() => writeStored("malachite.tab", current), [current]);
+  useEffect(() => writeStored("malachite.pinned", [...pinned]), [pinned]);
+  const strip = useMemo(() => orderTabs(tabs, pinned), [tabs, pinned]);
 
   const reload = useCallback(() => { api.tree().then(setTree, fail); api.index().then(setItems, fail); }, [fail]);
   useEffect(() => { api.hub().then((v) => { setHub(v); document.title = `${v.name} · Malachite`; }, fail); reload(); }, [reload, fail]);
@@ -140,10 +147,13 @@ export function App() {
     setTabs((t) => (t.includes(p) ? t : side ? [...t, p] : [p, ...t].slice(0, 12)));
     if (!side) setCurrent(p);
   }, []);
-  const close = (p: string) => {
-    const rest = tabs.filter((t) => t !== p);
-    setTabs(rest);
-    if (current === p) setCurrent(rest[0] ?? null);
+  /** Closes tabs (kit tabs.ts): what is typed in the shown one is saved first; its neighbour shows. */
+  const closeTabs = (paths: string[]) => {
+    if (current && paths.includes(current)) flush.current();
+    const next = afterClose(strip, current, paths);
+    setTabs(next.tabs);
+    setCurrent(next.current);
+    setPinned((s) => new Set([...s].filter((t) => !paths.includes(t))));
   };
   // a deep link opens a file: /?open=<path in the hub>&mode=edit (the Launcher and other apps use it)
   useEffect(() => {
@@ -188,9 +198,9 @@ export function App() {
     newFolder: (dir) => setAsk({ title: "New folder", label: "Name", ok: "Create", run: (n) => api.folder(dir ? `${dir}/${n}` : n).then(reload, fail) }),
     rename: (p) => setAsk({
       title: "Rename", label: "Path in the hub", value: p, ok: "Rename",
-      run: (to) => to !== p && api.move(p, to).then(() => { reload(); setTabs((t) => t.map((x) => (x === p ? to : x))); if (current === p) setCurrent(to); }, fail),
+      run: (to) => to !== p && api.move(p, to).then(() => { reload(); setTabs((t) => t.map((x) => (x === p ? to : x))); setPinned((s) => new Set([...s].map((x) => (x === p ? to : x)))); if (current === p) setCurrent(to); }, fail),
     }),
-    trash: (p) => setAsk({ title: `Move ${p} to the trash?`, danger: true, ok: "Move to trash", run: () => api.trash(p).then(() => { reload(); close(p); setTrashVersion((n) => n + 1); show({ title: "Moved to the trash", detail: `${p} · the trash key in the hub card brings it back`, state: "done" }); }, fail) }),
+    trash: (p) => setAsk({ title: `Move ${p} to the trash?`, danger: true, ok: "Move to trash", run: () => api.trash(p).then(() => { reload(); closeTabs([p]); setTrashVersion((n) => n + 1); show({ title: "Moved to the trash", detail: `${p} · the trash key in the hub card brings it back`, state: "done" }); }, fail) }),
     seal: (p) => setAsk({
       title: `Seal ${p}?`, ok: "Seal", danger: true,
       run: () => api.seal(p).then(() => { load(p); show({ title: "Sealed", detail: `${p}: its body is frozen and hashed; corrections go in a new note`, state: "done" }); }, fail),
@@ -202,6 +212,19 @@ export function App() {
     backlinkCount: (p) => allLinks.filter((l) => l.to === p).length,
     sealed: (p) => !!items.find((i) => i.path === p)?.props.sealed,
   };
+  // a right click on a tab (REBRAND "Tab menu"): the tab's group, then the file's menu without Open
+  const tabItems = (p: string) => {
+    const e = entries.find((x) => x.path === p);
+    return tabMenu(p, { tabs: strip, pinned, dirty: (t) => t === current && draft !== null }, {
+      close: closeTabs,
+      pin: (t, on) => setPinned((s) => { const n = new Set(s); if (on) n.add(t); else n.delete(t); return n; }),
+      reveal: (t) => { setPage("notes"); setTrashOpen(false); setHideL(false); setRevealed(t); },
+      file: e ? fileMenu(e, actions, true) : [],
+    });
+  };
+  useEffect(() => setRevealed(null), [current]);
+  // ponytail: a row inside a folder the reader collapsed stays hidden; open its folders if that bites
+  useEffect(() => { if (revealed) document.querySelector(`.file-row[title="${CSS.escape(revealed)}"]`)?.scrollIntoView({ block: "nearest" }); }, [revealed]);
 
   // the hub's files as the kit's tree rows
   const entries = useMemo(() => {
@@ -386,7 +409,7 @@ export function App() {
               {trashOpen ? <TrashList version={trashVersion} fail={fail}
                 confirm={(title, note, ok, run) => setAsk({ title, note, danger: true, ok, run })}
                 onRestored={(p, was) => { reload(); show({ title: "Restored", detail: p === was ? p : `${was} as ${p} (its name was taken)`, state: "done" }); }} />
-              : <FileTree entries={entries} active={current ?? undefined} ariaLabel="Hub" menu={(e) => fileMenu(e, actions)}
+              : <FileTree entries={entries} active={revealed ?? current ?? undefined} ariaLabel="Hub" menu={(e) => fileMenu(e, actions)}
                 actions={{
                   onOpen: (e) => open(e.path), onRename: (e) => actions.rename(e.path), onDelete: (e) => actions.trash(e.path),
                   onCopyPath: (e) => actions.copy(e.path, "Path"),
@@ -397,13 +420,18 @@ export function App() {
             <section className="panel note" aria-label="Note">
               <div className="ntabs">
                 <div className="tabs2" role="tablist">
-                  {tabs.map((p) => (
-                    <span key={p} role="tab" aria-selected={p === current} className={p === current ? "on" : ""} onClick={() => open(p)} onAuxClick={(e) => e.button === 1 && close(p)}>
+                  {strip.map((p) => (
+                    <span key={p} role="tab" aria-selected={p === current} className={`${p === current ? "on" : ""}${tabAt?.path === p ? " ctx" : ""}`} title={p}
+                      onClick={() => open(p)} onAuxClick={(e) => e.button === 1 && closeTabs([p])}
+                      onContextMenu={(e) => { e.preventDefault(); setTabAt({ path: p, x: e.clientX, y: e.clientY }); }}>
                       <FileGlyph path={p} size={14} />{nameOf(p).replace(/\.md$/, "")}
-                      <button type="button" className="tx" aria-label={`Close ${p}`} onClick={(e) => { e.stopPropagation(); close(p); }}>×</button>
+                      {pinned.has(p)
+                        ? <span className="tpin" aria-label="Pinned"><Icon name="pin" size={12} /></span>
+                        : <button type="button" className="tx" aria-label={`Close ${p}`} onClick={(e) => { e.stopPropagation(); closeTabs([p]); }}>×</button>}
                     </span>
                   ))}
                 </div>
+                {tabAt && <TabMenu path={tabAt.path} x={tabAt.x} y={tabAt.y} items={tabItems(tabAt.path)} onClose={() => setTabAt(null)} />}
               </div>
               {current && (
                 <div className="crumb">
