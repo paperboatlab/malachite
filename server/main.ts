@@ -14,7 +14,7 @@ import { NoSession, Sessions } from "./sessions.ts";
 import { Hub, HubError, SCHEMA, type HubKey } from "./hub.ts";
 import { defaultFolder, forget, infos, remember, tilde } from "./hubs.ts";
 
-export const DEFAULT_PORT = 59210;   // paperboat/apps.toml
+export const DEFAULT_PORT = 30474;   // Malachite's home port (paperboat/apps.toml); other hubs get --port from the CLI (30500–30599)
 const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",

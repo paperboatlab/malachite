@@ -41,8 +41,8 @@ npm test             # e2e.test.ts too, when paperboatd is on PATH or $PAPERBOAT
 ## Run
 
 ```sh
-bin/malachite examples/tank-lab          # http://127.0.0.1:59210/
-bin/malachite ~/notes --port 59300       # any folder becomes a hub (.malachite/hub.toml) on first open
+bin/malachite examples/tank-lab          # http://127.0.0.1:30474/
+bin/malachite ~/notes --port 30500       # any folder becomes a hub (.malachite/hub.toml) on first open
 bin/malachite hub list                   # the hubs this machine knows: paperboat hub … once installed
 ```
 
