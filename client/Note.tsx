@@ -1,10 +1,11 @@
 // A note: its properties (the front matter, time and author set by the app), then the body. Read shows
 // it rendered with its cells runnable in place; Edit is the Markdown itself.
-import { Icon, Key, Spinner, type IconName } from "@paperboatlab/ui";
+import { Icon, Key, RemoveKey, Spinner, type IconName, type MenuEntry } from "@paperboatlab/ui";
 import { Editor, julia, python, type EditorSettings } from "@paperboatlab/ui/editor";
 import { useMemo } from "react";
 import type { Cell, NoteData, Output, Props, Run } from "./api.ts";
 import { renderer, type Resolve } from "./markdown.ts";
+import { MenuChip } from "./MenuChip.tsx";
 
 const PROPS: Record<string, [IconName, string]> = {
   created: ["calendar", "created"], author: ["person", "author"], project: ["symbol-namespace", "project"], kind: ["symbol-class", "kind"],
@@ -37,6 +38,65 @@ function Properties({ props, intact }: { props: Props; intact?: boolean }) {
   );
 }
 
+// the properties Malachite sets itself (they show, they don't edit), and the ones offered to add
+const SYSTEM = new Set(["created", "author", "sealed"]);
+const COMMON = ["kind", "status", "project", "tags", "due", "assignee"];
+const today = () => new Date().toISOString().slice(0, 10);
+export type AskFn = (title: string, value: string, ok: string, run: (v: string) => void) => void;
+
+/** Live's properties: Read's table, editable. Every change is the note's front matter, rewritten. */
+export function PropsEditor({ props, sealed, choices, ask, onChange }: {
+  props: Props; sealed: boolean; choices: (key: string) => string[]; ask: AskFn; onChange: (next: Props) => void;
+}) {
+  const keys = Object.keys(props).filter((k) => !HIDE.has(k));
+  const set = (k: string, v: string | string[]) => {
+    const n = { ...props };
+    if (v === "" || (Array.isArray(v) && !v.length)) delete n[k]; else n[k] = v;
+    onChange(n);
+  };
+  const add = (k: string) => {
+    if (k === "tags") return ask("Add a tag", "", "Add", (t) => set("tags", [t.replace(/^#/, "")]));
+    if (k === "due") return set("due", today());
+    const known = choices(k);
+    if (known.length && (k === "kind" || k === "status")) return set(k, known[0]);
+    ask(`Set ${k}`, "", "Set", (v) => set(k, v));
+  };
+  const other = () => ask("Add a property", "", "Add", (line) => {
+    const m = /^\s*([A-Za-z_][\w-]*)\s*[:=]?\s*(.*)$/.exec(line);
+    if (m && !HIDE.has(m[1]) && !SYSTEM.has(m[1])) set(m[1], m[2].trim() || today());
+  });
+  return (
+    <dl className="props editable">
+      {keys.map((k) => {
+        const v = props[k], [icon, label] = PROPS[k] ?? ["info", k], fixed = sealed || SYSTEM.has(k);
+        const rm = !fixed && <span className="prm"><RemoveKey label={`Remove ${k}`} onClick={() => set(k, "")} /></span>;
+        return [
+          <dt key={`${k}-t`}><Icon name={icon} size={14} />{label}</dt>,
+          <dd key={`${k}-d`}>
+            {fixed ? (Array.isArray(v) ? v.map((x) => <span key={x} className="tg">{x}</span>) : <span className="v">{when(v)}</span>)
+              : Array.isArray(v) ? <>
+                  {v.map((x) => <span key={x} className="tg">{k === "tags" ? `#${x}` : x}<RemoveKey label={`Remove ${x}`} onClick={() => set(k, v.filter((y) => y !== x))} /></span>)}
+                  <button type="button" className="tg add" onClick={() => ask(k === "tags" ? "Add a tag" : `Add to ${k}`, "", "Add", (t) => set(k, [...v, t.replace(/^#/, "")]))}>+</button>
+                </>
+              : k === "kind" || k === "status" ? <MenuChip label={`Set ${k}`} className="st pick" menu={[
+                  ...[...new Set([...choices(k), v])].map((x): MenuEntry => ({ id: x, label: x, checked: x === v, run: () => set(k, x) })),
+                  "-", { id: "other", label: "Other…", run: () => ask(`Set ${k}`, v, "Set", (x) => set(k, x)) },
+                ]}>{v}<Icon name="chevron-down" size={10} /></MenuChip>
+              : <input key={v} className="pv" defaultValue={v} aria-label={k} type={/^\d{4}-\d\d-\d\d$/.test(v) ? "date" : "text"}
+                  onBlur={(e) => e.target.value !== v && set(k, e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} />}
+            {k === "created" && <span className="auto">set by Malachite</span>}
+            {rm}
+          </dd>,
+        ];
+      })}
+      {!sealed && <dd className="padd"><MenuChip label="Add a property" className="chip add" menu={[
+        ...COMMON.filter((k) => !(k in props)).map((k): MenuEntry => ({ id: k, label: k, run: () => add(k) })),
+        "-", { id: "other", label: "Other…", run: other },
+      ]}>Add property</MenuChip></dd>}
+    </dl>
+  );
+}
+
 function Out({ o }: { o: Output }) {
   if (o.type === "stream") return <pre className={`stream ${o.name}`}>{o.text}</pre>;
   if (o.type === "error") return <pre className="err"><b>{o.error.type ? `${o.error.type}: ` : ""}{o.error.message}</b>{o.error.traceback ? `\n${o.error.traceback}` : ""}</pre>;
@@ -49,7 +109,7 @@ function Out({ o }: { o: Output }) {
 
 export type CodeLook = { settings: EditorSettings; appTheme: "light" | "dark" };
 
-function CellView({ cell, n, run, sealed, look, onRun, onStop }: { cell: Cell; n: number; run?: Run; sealed: boolean; look: CodeLook; onRun: () => void; onStop: () => void }) {
+export function CellView({ cell, n, run, sealed, look, onRun, onStop }: { cell: Cell; n: number | string; run?: Run; sealed: boolean; look: CodeLook; onRun: () => void; onStop: () => void }) {
   const busy = run?.state === "running" || run?.state === "queued";
   return (
     <div className={`cell${busy ? " run" : ""}`}>

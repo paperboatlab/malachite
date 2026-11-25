@@ -104,6 +104,8 @@ test("a property is set on its own, logged, and refused on a sealed note", () =>
   assert.match(body, /# Card/);
   const ev = v.events(1)[0] as any;
   assert.deepEqual([ev.action, ev.details.from, ev.details.to], ["note.property", "open", "in progress"]);
+  v.setProp(p, "status", "in progress");
+  assert.equal((v.events(1)[0] as any).details.from, "open", "an unchanged value writes and logs nothing");
   v.setProp(p, "status", "");
   assert.equal(split(fs.readFileSync(v.resolve(p), "utf8")).props.status, undefined);
   assert.throws(() => v.setProp(p, "sealed", "x"), /not a property/);

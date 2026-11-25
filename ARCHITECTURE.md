@@ -41,7 +41,8 @@ flowchart LR
   `.malachite/out/<note id>/<cell hash>.json` with the runtime, image digest and backend that made them.
   Interrupt goes through the daemon (SIGINT); no answer within 3 s restarts the session.
 - `server/main.ts`: the HTTP server: the page from `dist/`, the JSON API, Server-Sent Events.
-- `client/`: `App.tsx` (the shell: bar, rail, cards, tabs, search, dialogs; files that aren't notes, a CSV
+- `client/`: `App.tsx` (the shell: bar, rail, cards, tabs, search, dialogs; a note as Read, Live (the kit
+  editor with its `livePreview`, a cell's Run key saving then running it) or Edit; files that aren't notes, a CSV
   plotted), `Note.tsx` (properties, the Read view, cells and outputs), `fileMenu.ts` (the brand file menu
   for the kit's tree), `Graph.tsx` (the hub graph and the local graph, the kit's note graph), `Views.tsx` and `views.ts`
   (board, list, timeline over `views/*.toml`), `Side.tsx` (the Links card, the

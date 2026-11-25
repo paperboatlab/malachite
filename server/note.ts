@@ -3,46 +3,15 @@
 // language (decision 16); a cell is known by the hash of its language and code, so changing the code
 // leaves no stale output behind.
 import { createHash } from "node:crypto";
+import { join, split, type Props } from "./frontmatter.ts";
 
-export type Props = Record<string, string | string[]>;
+export { join, split, type Props };
+
 export type Lang = "julia" | "python";
 export type Cell = { lang: Lang; code: string; hash: string; line: number };
 export type Note = { props: Props; body: string; title: string; tags: string[]; links: string[]; cells: Cell[] };
 
 const LANGS: Record<string, Lang> = { julia: "julia", jl: "julia", python: "python", py: "python" };
-
-// ponytail: a YAML subset (scalars, flow lists, quotes); nested maps and block lists are kept as text.
-function parseValue(v: string): string | string[] {
-  v = v.trim();
-  if (v.startsWith("[") && v.endsWith("]")) return v.slice(1, -1).split(",").map((x) => unquote(x.trim())).filter((x) => x !== "");
-  return unquote(v);
-}
-function unquote(v: string): string {
-  if (v.length >= 2 && v.startsWith('"') && v.endsWith('"')) { try { return JSON.parse(v); } catch { return v.slice(1, -1); } }
-  if (v.length >= 2 && v.startsWith("'") && v.endsWith("'")) return v.slice(1, -1).replaceAll("''", "'");
-  return v;
-}
-const plain = (s: string) => /^[^\s"'[\]{},#:&*!|>%@`-][^"[\]{},#:]*$/.test(s) && s === s.trim() && !/:\s/.test(s);
-const quote = (s: string) => (plain(s) ? s : JSON.stringify(s));
-
-/** The front matter and the body after it. A note without one has empty props. */
-export function split(text: string): { props: Props; body: string } {
-  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text);
-  if (!m) return { props: {}, body: text };
-  const props: Props = {};
-  for (const line of m[1].split(/\r?\n/)) {
-    const kv = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
-    if (kv) props[kv[1]] = parseValue(kv[2]);
-  }
-  return { props, body: text.slice(m[0].length) };
-}
-
-export function join(props: Props, body: string): string {
-  const keys = Object.keys(props);
-  if (!keys.length) return body;
-  const lines = keys.map((k) => { const v = props[k]; return `${k}: ${Array.isArray(v) ? `[${v.map(quote).join(", ")}]` : quote(v)}`; });
-  return `---\n${lines.join("\n")}\n---\n${body}`;
-}
 
 export const cellHash = (lang: Lang, code: string) => createHash("sha256").update(`${lang}\n${code}`).digest("hex").slice(0, 16);
 export const bodyHash = (body: string) => createHash("sha256").update(body).digest("hex");
