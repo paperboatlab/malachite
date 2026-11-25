@@ -28,7 +28,8 @@ flowchart LR
 - `server/note.ts`: a note's parts: front matter (a YAML subset), title, tags, `[[links]]`, cells and
   their hashes. Pure functions.
 - `server/hub.ts`: `Hub`: every path through `resolve` (inside the hub, symlinks too), the tree,
-  read/write (atomic), create (id, time, author set here), one property set (a board move), move, trash (`.malachite/trash`), seal, and
+  read/write (atomic), create (id, time, author set here), one property set (a board move), move, the trash (`.malachite/trash/<id>/` with `trashed.json`: list,
+  restore beside a newcomer, delete for good, empty), seal, and
   the activity log (`log/YYYY-MM.jsonl`).
 - `server/index.ts`: `Index`: built from the files at start, updated by `fs.watch`; link resolution
   (path, name, the nearest of several), backlinks with their line.
@@ -44,7 +45,7 @@ flowchart LR
 - `client/`: `App.tsx` (the shell: bar, rail, cards, tabs, search, dialogs; a note as Read, Live (the kit
   editor with its `livePreview`, a cell's Run key saving then running it) or Edit; files that aren't notes, a CSV
   plotted), `Note.tsx` (properties, the Read view, cells and outputs), `fileMenu.ts` (the brand file menu
-  for the kit's tree), `Graph.tsx` (the hub graph and the local graph, the kit's note graph), `Views.tsx` and `views.ts`
+  for the kit's tree), `Graph.tsx` (the hub graph and the local graph, the kit's note graph), `Trash.tsx` (the hub card's trash), `Views.tsx` and `views.ts`
   (board, list, timeline over `views/*.toml`), `Side.tsx` (the Links card, the
   runtimes key and its peek), `markdown.ts` (marked with wikilinks and embeds), `files.tsx`, `api.ts`.
 - **From the kit** (`@paperboatlab/ui`): the shell's parts (Rail, Panel, PanelsKey, Search, Menu, Dialog,

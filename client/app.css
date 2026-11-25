@@ -229,3 +229,18 @@ table.t tbody tr:hover { background: color-mix(in srgb, var(--surface-raised) 60
 
 /* math in Read (Live draws the same, the kit's .cm-lp-math-block) */
 .doc .math-block { margin: 12px 0; text-align: center; overflow-x: auto; }
+
+/* the hub's trash (Trash.tsx), in the hub card */
+.key.round[aria-pressed="true"] { background: var(--surface-sunken); color: var(--text); }
+.trash { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: 6px 0 0; box-sizing: border-box; }
+.trash .none { margin: 10px 14px; color: var(--text-muted); font-size: 12.5px; line-height: 1.5; }
+.trow { position: relative; display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 14px; }
+.trow:hover { background: color-mix(in srgb, var(--surface-raised) 60%, transparent); }
+.trow .tn { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.trow .tn b { font-weight: 500; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trow .tn small { font: 11px var(--font-mono); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* its keys over the row's end on hover, so the name has the whole width otherwise */
+.trow .tk { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 4px; padding-left: 16px; background: linear-gradient(to right, transparent, color-mix(in srgb, var(--surface-raised) 60%, var(--surface-panel)) 14px); opacity: 0; pointer-events: none; transition: opacity var(--motion); }
+.trow:hover .tk, .trow:focus-within .tk { pointer-events: auto; }
+.trow:hover .tk, .trow:focus-within .tk { opacity: 1; }
+.trash .tfoot { margin-top: auto; position: sticky; bottom: 0; background: var(--surface-panel); display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); font: 11.5px var(--font-mono); color: var(--text-muted); }

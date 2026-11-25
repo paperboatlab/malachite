@@ -21,6 +21,7 @@ import { valuesIn } from "./views.ts";
 import { Ev, LinksCard, RuntimesKey } from "./Side.tsx";
 import { HubGraph, hubLinks } from "./Graph.tsx";
 import { ViewsPage } from "./Views.tsx";
+import { TrashList } from "./Trash.tsx";
 
 type Page = "notes" | "views" | "graph" | "log";
 type Mode = "read" | "live" | "edit";
@@ -42,7 +43,7 @@ async function hashOf(lang: Lang, code: string) {
 }
 /** a/b/../c → a/c */
 const normalise = (p: string) => p.split("/").reduce<string[]>((o, s) => (s === ".." ? o.slice(0, -1) : s && s !== "." ? [...o, s] : o), []).join("/");
-type Ask = { title: string; label?: string; value?: string; danger?: boolean; ok: string; run: (v: string) => void };
+type Ask = { title: string; label?: string; value?: string; danger?: boolean; note?: string; ok: string; run: (v: string) => void };
 const isTheme = (v: unknown): v is Theme => v === "light" || v === "dark" || v === "system";
 const isBool = (v: unknown): v is boolean => typeof v === "boolean";
 const isList = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
@@ -66,6 +67,7 @@ export function App() {
   const [page, setPage] = useState<Page>("notes");
   const [wide, setWide] = useState(() => readStored("malachite.rail.wide", isBool) ?? false);
   const [hideL, setHideL] = useState(false), [hideR, setHideR] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false), [trashVersion, setTrashVersion] = useState(0);
   const [tabs, setTabs] = useState<string[]>(() => readStored("malachite.tabs", isList) ?? []);
   const [current, setCurrent] = useState<string | null>(() => readStored("malachite.tabs", isList)?.[0] ?? null);
   const [note, setNote] = useState<NoteData | null>(null);
@@ -186,7 +188,7 @@ export function App() {
       title: "Rename", label: "Path in the hub", value: p, ok: "Rename",
       run: (to) => to !== p && api.move(p, to).then(() => { reload(); setTabs((t) => t.map((x) => (x === p ? to : x))); if (current === p) setCurrent(to); }, fail),
     }),
-    trash: (p) => setAsk({ title: `Move ${p} to the trash?`, danger: true, ok: "Move to trash", run: () => api.trash(p).then(() => { reload(); close(p); show({ title: "Moved to the trash", detail: `${p} · .malachite/trash`, state: "done" }); }, fail) }),
+    trash: (p) => setAsk({ title: `Move ${p} to the trash?`, danger: true, ok: "Move to trash", run: () => api.trash(p).then(() => { reload(); close(p); setTrashVersion((n) => n + 1); show({ title: "Moved to the trash", detail: `${p} · the trash key in the hub card brings it back`, state: "done" }); }, fail) }),
     seal: (p) => setAsk({
       title: `Seal ${p}?`, ok: "Seal", danger: true,
       run: () => api.seal(p).then(() => { load(p); show({ title: "Sealed", detail: `${p}: its body is frozen and hashed; corrections go in a new note`, state: "done" }); }, fail),
@@ -281,6 +283,8 @@ export function App() {
     ...[...new Set(items.flatMap((i) => i.tags))].sort().map((t): SearchItem => ({ id: `t:${t}`, label: `#${t}`, detail: `${items.filter((i) => i.tags.includes(t)).length} notes`, group: "Tags", scope: "Notes", icon: "tag", run: () => setPage("views") })),
     { id: "c:new", label: "New note", shortcut: "Ctrl N", group: "Commands", scope: "Commands", icon: "new-file", run: () => newNote() },
     { id: "c:seal", label: "Seal this note…", group: "Commands", scope: "Commands", icon: "lock", disabled: !note || note.sealed, why: note?.sealed ? "It is sealed" : "Open a note first", run: () => note && actions.seal(note.path) },
+    { id: "c:trash", label: "Show the trash", group: "Commands", scope: "Commands", icon: "trash", run: () => { setPage("notes"); setHideL(false); setTrashOpen(true); } },
+    { id: "c:empty", label: "Empty the trash…", group: "Commands", scope: "Commands", icon: "trash", run: () => setAsk({ title: "Empty the trash?", note: "Everything in it leaves the hub for good; it can't be restored.", danger: true, ok: "Empty trash", run: () => api.emptyTrash().then(() => setTrashVersion((n) => n + 1), fail) }) },
     { id: "c:graph", label: "Show in graph", group: "Commands", scope: "Commands", icon: "a-trace", disabled: !note, why: "Open a note first", run: () => note && actions.graph(note.path) },
     { id: "c:jl", label: "Restart the Julia session", group: "Commands", scope: "Commands", icon: "debug-restart", run: () => { api.restart("julia").catch(fail); } },
     { id: "c:py", label: "Restart the Python session", group: "Commands", scope: "Commands", icon: "debug-restart", run: () => { api.restart("python").catch(fail); } },
@@ -319,14 +323,20 @@ export function App() {
       <main className="pages">
         {page === "notes" && (
           <div className="notes">
-            <Panel name={hub?.name ?? "Hub"} count={`${items.length}`} side="left" hidden={hideL} onHidden={setHideL} icon="a-notes" width={262}
-              head={<span className="tools"><Key size="sm" kind="quiet" round icon="new-file" label="New note (Ctrl N)" onClick={() => newNote("")} /><Key size="sm" kind="quiet" round icon="new-folder" label="New folder" onClick={() => actions.newFolder("")} /></span>}>
-              <FileTree entries={entries} active={current ?? undefined} ariaLabel="Hub" menu={(e) => fileMenu(e, actions)}
+            <Panel name={trashOpen ? "Trash" : hub?.name ?? "Hub"} count={trashOpen ? undefined : `${items.length}`} side="left" hidden={hideL} onHidden={setHideL} icon="a-notes" width={262}
+              head={<span className="tools">
+                {!trashOpen && <><Key size="sm" kind="quiet" round icon="new-file" label="New note (Ctrl N)" onClick={() => newNote("")} /><Key size="sm" kind="quiet" round icon="new-folder" label="New folder" onClick={() => actions.newFolder("")} /></>}
+                <Key size="sm" kind="quiet" round icon="trash" label={trashOpen ? "Back to the hub" : "Trash"} aria-pressed={trashOpen} onClick={() => setTrashOpen((o) => !o)} />
+              </span>}>
+              {trashOpen ? <TrashList version={trashVersion} fail={fail}
+                confirm={(title, note, ok, run) => setAsk({ title, note, danger: true, ok, run })}
+                onRestored={(p, was) => { reload(); show({ title: "Restored", detail: p === was ? p : `${was} as ${p} (its name was taken)`, state: "done" }); }} />
+              : <FileTree entries={entries} active={current ?? undefined} ariaLabel="Hub" menu={(e) => fileMenu(e, actions)}
                 actions={{
                   onOpen: (e) => open(e.path), onRename: (e) => actions.rename(e.path), onDelete: (e) => actions.trash(e.path),
                   onCopyPath: (e) => actions.copy(e.path, "Path"),
                   onMove: (src, target) => { const to = target ? `${target.path}/${src.name}` : src.name; if (to !== src.path) api.move(src.path, to).then(reload, fail); },
-                }} />
+                }} />}
             </Panel>
 
             <section className="panel note" aria-label="Note">
@@ -449,7 +459,7 @@ function AskDialog({ ask, onClose }: { ask: Ask; onClose: () => void }) {
     <Dialog title={ask.title} onClose={onClose} actions={<><Key kind={ask.danger ? "danger" : "primary"} onClick={go}>{ask.ok}</Key><Key onClick={onClose}>Cancel</Key></>}>
       {ask.label
         ? <label className="well ask"><input autoFocus value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); go(); } }} aria-label={ask.label} /><em>{ask.label}</em></label>
-        : <p>{ask.danger && ask.ok === "Seal" ? "Its body is frozen and hashed; afterwards it only takes annotations, and corrections go in a new note." : "It goes to .malachite/trash in the hub, so it can come back."}</p>}
+        : <p>{ask.note ?? (ask.danger && ask.ok === "Seal" ? "Its body is frozen and hashed; afterwards it only takes annotations, and corrections go in a new note." : "It goes to the hub's trash, so it can come back.")}</p>}
     </Dialog>
   );
 }

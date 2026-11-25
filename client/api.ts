@@ -13,6 +13,7 @@ export type NoteData = { path: string; text: string; props: Props; body: string;
 export type LogEvent = { time: string; actor: string; action: string; target?: string; details?: Record<string, unknown> } | { damaged: string };
 export type Links = { links: { link: string; path: string | null }[]; backlinks: { path: string; title: string; context: string }[]; history: LogEvent[] };
 export type Session = { id: string; runtime: string; backend: string; state: string; uptime_s?: number; idle_s?: number; stats: { cpu_percent: number; memory_bytes: number } | null; running: { note: string; since?: string }[] };
+export type Trashed = { id: string; path: string; kind: "file" | "folder"; time: string; actor: string };
 export type Peek = { sessions: Session[]; runtimes: { name: string; version: string }[] };
 
 async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -34,6 +35,10 @@ export const api = {
   folder: (p: string) => call("POST", "/api/folder", { path: p }),
   move: (from: string, to: string) => call("POST", "/api/move", { from, to }),
   trash: (p: string) => call("POST", "/api/trash", { path: p }),
+  trashed: () => call<Trashed[]>("GET", "/api/trash"),
+  restore: (id: string) => call<{ path: string }>("POST", "/api/trash/restore", { id }),
+  purge: (id: string) => call("POST", "/api/trash/delete", { id }),
+  emptyTrash: () => call("POST", "/api/trash/empty", {}),
   seal: (p: string) => call("POST", "/api/seal", { path: p }),
   prop: (p: string, key: string, value: string) => call("POST", "/api/prop", { path: p, key, value }),
   reveal: (p: string) => call("POST", "/api/reveal", { path: p }),

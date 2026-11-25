@@ -112,3 +112,23 @@ test("a property is set on its own, logged, and refused on a sealed note", () =>
   v.seal(p);
   assert.throws(() => v.setProp(p, "status", "done"), /sealed/);
 });
+
+test("the trash: listed, restored (beside a newcomer), deleted, emptied; every one a log line", () => {
+  const v = new Hub(tmp());
+  const a = v.create("", "Alpha"), b = v.create("", "Beta");
+  v.mkdir("old"); fs.writeFileSync(v.resolve("old/data.csv"), "t,x\n");
+  v.trash(a); v.trash("old"); v.trash(b);
+  const list = v.trashed();
+  assert.deepEqual(list.map((t) => [t.path, t.kind]).sort(), [[a, "file"], [b, "file"], ["old", "folder"]].sort());
+  assert.equal(v.restore(list.find((t) => t.path === "old")!.id), "old");
+  assert.equal(fs.readFileSync(v.resolve("old/data.csv"), "utf8"), "t,x\n");
+  fs.writeFileSync(v.resolve(a), "a newcomer\n");
+  const back = v.restore(v.trashed().find((t) => t.path === a)!.id);
+  assert.equal(back, a.replace(/\.md$/, " (restored).md"));
+  assert.match(fs.readFileSync(v.resolve(back), "utf8"), /# Alpha/);
+  v.purge(v.trashed()[0].id);
+  assert.equal(v.trashed().length, 0);
+  v.trash(back); v.purge();
+  assert.deepEqual([v.trashed().length, (v.events(1)[0] as any).action], [0, "trash.emptied"]);
+  assert.throws(() => v.restore("../../etc"), /no .* in the trash/);
+});
