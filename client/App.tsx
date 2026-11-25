@@ -3,18 +3,21 @@
 // slim bars. The parts are the kit's (@paperboatlab/ui): the file tree, the editor and its languages, the
 // plot, the canvas layout; Malachite brings the hub, its notes and cells. Files are the record.
 import {
-  AppMark, Dialog, Key, Panel, PanelsKey, Rail, Search, Segmented, ThemePicker, Toasts, chordMatches, readStored, typing, useTheme, useToasts, writeStored,
-  type SearchItem, type Theme,
+  AppMark, Dialog, Key, Menu, Panel, PanelsKey, Rail, Search, Segmented, ThemePicker, Toasts, chordMatches, readStored, typing, useTheme, useToasts, writeStored,
+  type MenuEntry, type SearchItem, type Theme,
 } from "@paperboatlab/ui";
 import { DEFAULT_EDITOR_SETTINGS, Editor, languageFor, livePreview, markdown, type Session } from "@paperboatlab/ui/editor";
 import type { EditorView } from "@codemirror/view";
 import { FileTree, type FileEntry } from "@paperboatlab/ui/files";
 import { Plot2D, type PlotSeries } from "@paperboatlab/ui/plot";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, listen, type Cell, type Entry, type Item, type Lang, type Links, type LogEvent, type NoteData, type Run } from "./api.ts";
+import { createPortal } from "react-dom";
+import { patch, split } from "../server/frontmatter.ts";
+import { api, listen, type Cell, type Entry, type Item, type Lang, type Links, type LogEvent, type NoteData, type Props, type Run } from "./api.ts";
 import { fileMenu, type FileActions } from "./fileMenu.ts";
 import { FileGlyph, IMAGE, OWNER, TEXT, typeOf } from "./files.tsx";
-import { ReadView, type CodeLook } from "./Note.tsx";
+import { CellView, PropsEditor, ReadView, type CodeLook } from "./Note.tsx";
+import { valuesIn } from "./views.ts";
 import { Ev, LinksCard, RuntimesKey } from "./Side.tsx";
 import { HubGraph, hubLinks } from "./Graph.tsx";
 import { ViewsPage } from "./Views.tsx";
@@ -22,14 +25,15 @@ import { ViewsPage } from "./Views.tsx";
 type Page = "notes" | "views" | "graph" | "log";
 type Mode = "read" | "live" | "edit";
 
-/** The fenced cell whose opening fence is on `line` (1-based) of a note's text, as the server reads cells. */
-function cellAt(text: string, line: number): { lang: Lang; code: string } | null {
-  const lines = text.split("\n"), open = /^(`{3,}|~{3,})\s*([\w+-]*)/.exec(lines[line - 1] ?? "");
-  const lang = ({ julia: "julia", jl: "julia", python: "python", py: "python" } as Record<string, Lang>)[open?.[2].toLowerCase() ?? ""];
-  if (!open || !lang) return null;
-  let j = line;
-  while (j < lines.length && !(/^(`{3,}|~{3,})\s*$/.test(lines[j]) && lines[j][0] === open[1][0])) j++;
-  return { lang, code: lines.slice(line, j).join("\n") };
+/** A cell drawn into Live: Read's cell, known by its hash as the server knows it (the code may be unsaved). */
+function LiveCell({ lang, code, note, runs, look, onRun, onStop }: {
+  lang: string; code: string; note: NoteData; runs: Record<string, Run>; look: CodeLook; onRun: (c: Cell) => void; onStop: (c: Cell) => void;
+}) {
+  const L: Lang = lang.startsWith("j") ? "julia" : "python";
+  const [hash, setHash] = useState(() => note.cells.find((c) => c.lang === L && c.code === code)?.hash ?? "");
+  useEffect(() => { hashOf(L, code).then(setHash); }, [L, code]);
+  const at = note.cells.findIndex((c) => c.hash === hash), cell: Cell = { lang: L, code, hash, line: at >= 0 ? note.cells[at].line : 0 };
+  return <CellView cell={cell} n={at >= 0 ? at + 1 : "·"} run={hash ? runs[hash] ?? note.outputs[hash] : undefined} sealed={note.sealed} look={look} onRun={() => onRun(cell)} onStop={() => onStop(cell)} />;
 }
 /** server/note.ts cellHash, in the page. */
 async function hashOf(lang: Lang, code: string) {
@@ -66,7 +70,9 @@ export function App() {
   const [current, setCurrent] = useState<string | null>(() => readStored("malachite.tabs", isList)?.[0] ?? null);
   const [note, setNote] = useState<NoteData | null>(null);
   const [plain, setPlain] = useState<string | null>(null);   // a text file that isn't a note
-  const [mode, setMode] = useState<Mode>("read");
+  const [mode, setMode] = useState<Mode>("live");
+  const [cellEls, setCellEls] = useState<{ el: HTMLElement; lang: string; code: string }[]>([]);
+  const [ctx, setCtx] = useState<{ x: number; y: number; at: number | null } | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [links, setLinks] = useState<Links | null>(null);
   const [runs, setRuns] = useState<Record<string, Run>>({});
@@ -124,7 +130,7 @@ export function App() {
   useEffect(() => { if (page === "log") api.log().then(setLog, fail); }, [page, fail]);
 
   /** Opens a file in a tab (to the side: behind the current one); a note opens in Read unless asked. */
-  const open = useCallback((p: string, side = false, view: Mode = "read") => {
+  const open = useCallback((p: string, side = false, view: Mode = "live") => {
     setPage("notes");
     if (!side) setMode(view);
     setTabs((t) => (t.includes(p) ? t : side ? [...t, p] : [p, ...t].slice(0, 12)));
@@ -139,7 +145,7 @@ export function App() {
   useEffect(() => {
     const u = new URLSearchParams(location.search), p = u.get("open");
     const m = u.get("mode");
-    if (p) open(p, false, m === "edit" || m === "live" ? m : "read");
+    if (p) open(p, false, m === "edit" || m === "read" ? m : "live");
     const pg = u.get("page"); if (pg === "graph" || pg === "views" || pg === "log") setPage(pg);
   }, [open]);
 
@@ -152,7 +158,11 @@ export function App() {
   const allLinks = useMemo(() => hubLinks(items, resolve), [items, resolve]);
 
   const save = useCallback(async (p: string, text: string) => {
-    try { await api.save(p, text); setDraft(null); } catch (e) { fail(e); }
+    try {
+      await api.save(p, text);
+      setDraft((d) => (d === text ? null : d));   // typed on while it saved: that stays to save next
+      api.note(p).then((n) => currentRef.current === p && setNote(n), () => {});   // the note as saved (properties, cells)
+    } catch (e) { fail(e); }
   }, [fail]);
   // save what is typed after a pause (and on Ctrl+S); the file is the record
   useEffect(() => {
@@ -166,7 +176,7 @@ export function App() {
 
   const newNote = useCallback((dir = current ? dirOf(current) : "") => setAsk({
     title: "New note", label: "Title", ok: "Create",
-    run: (title) => api.create(dir, title).then((r) => { reload(); open(r.path, false, "edit"); }, fail),
+    run: (title) => api.create(dir, title).then((r) => { reload(); open(r.path, false, "live"); }, fail),
   }), [current, open, reload, fail]);
 
   const actions: FileActions = {
@@ -204,23 +214,54 @@ export function App() {
     setAsk({ title: `Create ${target}?`, label: "Title", value: target, ok: "Create", run: (t) => api.create(current ? dirOf(current) : "", t).then((r) => { reload(); open(r.path); }, fail) });
   };
 
-  // Live: the editor with the kit's live preview; its links open like Read's, its Run key saves, then runs
+  // Live: the editor with the kit's live preview; its links open like Read's, its cells are Read's cells
+  // (drawn into the editor, run after a save), its properties the table above it
   const liveView = useRef<EditorView | null>(null);
-  const liveAct = useRef({ link: (_t: string, _w: boolean) => {}, run: (_l: number) => {} });
+  const liveAct = useRef({ link: (_t: string, _w: boolean) => {}, run: (_c: Cell) => {} });
   liveAct.current = {
     link: (t, wiki) => {
       if (/^[a-z]+:/i.test(t)) { window.open(t, "_blank", "noopener"); return; }
       const p = wiki ? resolve(t) : resolve(normalise(current ? `${dirOf(current)}/${t}` : t));
       onLink(p ?? t, !p);
     },
-    run: async (line) => {
-      const v = liveView.current, cell = v && cellAt(v.state.doc.toString(), line);
-      if (!cell || !current) return;
-      if (draft !== null) await save(current, v.state.doc.toString());
-      runCell({ ...cell, hash: await hashOf(cell.lang, cell.code), line });
+    run: async (cell) => {
+      const v = liveView.current;
+      if (!current || !cell.hash) return;
+      if (v && draft !== null) await save(current, v.state.doc.toString());
+      runCell(cell);
     },
   };
-  const live = useMemo(() => livePreview({ onLink: (t, w) => liveAct.current.link(t, w), run: { langs: ["julia", "jl", "python", "py"], onRun: (l) => liveAct.current.run(l) } }), []);
+  const live = useMemo(() => livePreview({
+    onLink: (t, w) => liveAct.current.link(t, w), frontMatter: "hide",
+    cells: {
+      langs: ["julia", "jl", "python", "py"],
+      mount: (el, c) => setCellEls((l) => [...l, { el, ...c }]),
+      unmount: (el) => setCellEls((l) => l.filter((x) => x.el !== el)),
+    },
+  }), []);
+  /** The properties table's change, made in the editor (so it undoes, and saves like typing). */
+  const setProps = (next: Props) => {
+    const v = liveView.current;
+    if (!v) return;
+    const text = v.state.doc.toString(), { body } = split(text), joined = patch(text, next);
+    v.dispatch({ changes: { from: 0, to: text.length - body.length, insert: joined.slice(0, joined.length - body.length) } });
+  };
+  /** A new cell below the line at `at` (where the menu was opened; else the caret), the caret in it; never
+   *  inside the front matter (hidden in Live, and the caret starts there). */
+  const insertCell = (lang: Lang, at?: number | null) => {
+    const v = liveView.current;
+    if (!v || mode === "read") return;
+    const text0 = v.state.doc.toString(), front = text0.length - split(text0).body.length;
+    const want = at ?? v.state.selection.main.head, pos = want < front ? v.state.doc.length : want;   // no caret in the text yet: at its end
+    const line = v.state.doc.lineAt(pos), blank = !line.text.trim();
+    const from = blank ? line.from : line.to, lead = blank ? "" : "\n\n", text = `${lead}\`\`\`${lang}\n\n\`\`\`\n`;
+    v.dispatch({ changes: { from, to: blank ? line.to : from, insert: text }, selection: { anchor: from + lead.length + 4 + lang.length } });
+    v.focus();
+  };
+  const noteMenu = (at?: number | null): MenuEntry[] => [
+    { id: "jl", label: "Insert Julia cell", icon: "add", disabled: !!note?.sealed, why: "It is sealed", run: () => insertCell("julia", at) },
+    { id: "py", label: "Insert Python cell", icon: "add", disabled: !!note?.sealed, why: "It is sealed", run: () => insertCell("python", at) },
+  ];
 
   // keys: Ctrl K search, Ctrl B / Ctrl Alt B the side cards, Alt 1–4 the pages (the Rail), Ctrl N a note
   useEffect(() => {
@@ -243,7 +284,8 @@ export function App() {
     { id: "c:graph", label: "Show in graph", group: "Commands", scope: "Commands", icon: "a-trace", disabled: !note, why: "Open a note first", run: () => note && actions.graph(note.path) },
     { id: "c:jl", label: "Restart the Julia session", group: "Commands", scope: "Commands", icon: "debug-restart", run: () => { api.restart("julia").catch(fail); } },
     { id: "c:py", label: "Restart the Python session", group: "Commands", scope: "Commands", icon: "debug-restart", run: () => { api.restart("python").catch(fail); } },
-    { id: "c:edit", label: mode === "edit" ? "Read this note" : "Edit this note", group: "Commands", scope: "Commands", icon: "command", disabled: !note, why: "Open a note first", run: () => setMode((m) => (m === "edit" ? "read" : "edit")) },
+    { id: "c:edit", label: mode === "edit" ? "Back to Live" : "Edit the Markdown", group: "Commands", scope: "Commands", icon: "command", disabled: !note, why: "Open a note first", run: () => setMode((m) => (m === "edit" ? "live" : "edit")) },
+    ...noteMenu().flatMap((m): SearchItem[] => (typeof m === "object" && "run" in m ? [{ id: `c:${m.id}`, label: m.label, group: "Commands", scope: "Commands", icon: "add", disabled: !note || mode === "read" || m.disabled, why: !note ? "Open a note first" : mode === "read" ? "Switch to Live or Edit" : m.why, run: m.run }] : [])),
     ...(["notes", "views", "graph", "log"] as Page[]).map((p, i): SearchItem => ({ id: `g:${p}`, label: `Go to ${p[0].toUpperCase()}${p.slice(1)}`, shortcut: `Alt ${i + 1}`, group: "Commands", scope: "Commands", icon: "go", run: () => setPage(p) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [items, note, mode, open, newNote, fail]);
@@ -310,11 +352,24 @@ export function App() {
               <div className="body">
                 {!current && <div className="empty"><AppMark app="malachite" size={72} idle label="" /><p>Open a note from the hub, or make one.</p><Key kind="primary" icon="new-file" onClick={() => newNote("")}>New note</Key></div>}
                 {note && mode === "read" && <ReadView note={note} runs={runs} resolve={resolve} look={look} onLink={onLink} onRun={runCell} onStop={stopCell} />}
-                {note && mode !== "read" && (
-                  <div className={`edit ${mode}`}><Editor key={`${note.path}:${note.sealed}:${mode}`} value={draft ?? note.text} language={markdown} settings={look.settings} appTheme={look.appTheme}
+                {note && mode !== "read" && (() => {
+                  const editor = <Editor key={`${note.path}:${note.sealed}:${mode}`} value={draft ?? note.text} language={markdown} settings={look.settings} appTheme={look.appTheme}
                     readOnly={note.sealed} ariaLabel={`${note.title}, Markdown`} onChange={setDraft} keys={saveKeys}
-                    extra={mode === "live" ? live : undefined} onView={(v) => { liveView.current = v; }} /></div>
-                )}
+                    extra={mode === "live" ? live : undefined} onView={(v) => { liveView.current = v; }} />;
+                  return (
+                    <div className={`edit ${mode}`} onContextMenu={(e) => { if ((e.target as HTMLElement).closest(".cm-editor")) { e.preventDefault(); setCtx({ x: e.clientX, y: e.clientY, at: liveView.current?.posAtCoords({ x: e.clientX, y: e.clientY }) ?? null }); } }}>
+                      {mode === "live" ? <div className="livecol">
+                        <PropsEditor props={split(draft ?? note.text).props} sealed={note.sealed} onChange={setProps}
+                          choices={(k) => valuesIn(items.filter((i) => i.type === "md"), k)}
+                          ask={(title, value, ok, run) => setAsk({ title, label: "Value", value, ok, run: (v) => v.trim() && run(v.trim()) })} />
+                        {editor}
+                      </div> : editor}
+                      {mode === "live" && cellEls.map((c) => createPortal(
+                        <LiveCell key="cell" lang={c.lang} code={c.code} note={note} runs={runs} look={look} onRun={(cell) => liveAct.current.run(cell)} onStop={stopCell} />, c.el))}
+                      {ctx && <div className="ctxmenu" style={{ left: ctx.x, top: ctx.y }}><Menu label="Note" items={noteMenu(ctx.at)} onClose={() => setCtx(null)} /></div>}
+                    </div>
+                  );
+                })()}
                 {current && t !== "md" && <FileView path={current} text={plain} look={look} keys={saveKeys} onChange={setDraft} />}
               </div>
               {note && <div className="efoot"><span>markdown · {note.body.split(/\s+/).filter(Boolean).length} words · {note.cells.length} cells</span>

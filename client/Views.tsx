@@ -1,8 +1,9 @@
 // The Views page (the mockup's): the hub's notes by their front matter, as Board, List or Timeline. A view
 // is a file (views/<name>.toml, client/views.ts); changing a saved one rewrites it, and moving a card to
 // another column sets that property on the note.
-import { Icon, Key, Menu, Panel, Segmented, parseToml, type MenuEntry } from "@paperboatlab/ui";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Icon, Key, Panel, Segmented, parseToml, type MenuEntry } from "@paperboatlab/ui";
+import { useEffect, useMemo, useState } from "react";
+import { MenuChip } from "./MenuChip.tsx";
 import { api, type Item } from "./api.ts";
 import { FileGlyph } from "./files.tsx";
 import { DAY, DEFAULT, NONE, columnsOf, dayOf, first, itemsOf, keysIn, readView, valuesIn, viewPath, viewToml, type Show, type View } from "./views.ts";
@@ -13,18 +14,6 @@ const SHOWS: { value: Show; label: string }[] = [{ value: "board", label: "Board
 const isView = (p: string) => /^views\/[^/]+\.toml$/.test(p);
 const short = (d: number) => new Date(d).toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" });
 const initials = (s: string) => s.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";
-
-/** A key that opens a menu below it: the bar's chips, the view picker. */
-function MenuChip({ label, menu, className = "chip", children }: { label: string; menu: MenuEntry[]; className?: string; children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLButtonElement>(null);
-  return (
-    <span className="chipw">
-      <button ref={ref} type="button" className={className} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{children}</button>
-      {open && <Menu label={label} items={menu} triggerRef={ref} onClose={() => setOpen(false)} />}
-    </span>
-  );
-}
 
 export function ViewsPage({ items, onOpen, ask, fail }: { items: Item[]; onOpen: (p: string) => void; ask: Ask; fail: (e: Error) => void }) {
   const files = items.filter((i) => isView(i.path));

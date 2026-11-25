@@ -58,6 +58,20 @@ a.wl.miss, .wl.miss { color: var(--text-muted); text-decoration-style: dashed; }
 .props { display: grid; grid-template-columns: 128px 1fr; gap: 2px 12px; padding: 4px 0 12px; margin: 0 0 16px; border-bottom: 1px solid var(--line); }
 .props dt { display: flex; align-items: center; gap: 6px; color: var(--text-muted); height: 28px; }
 .props dd { margin: 0; display: flex; align-items: center; gap: 6px; min-height: 28px; flex-wrap: wrap; }
+/* Live's properties: the same table, its values editable in place */
+.props.editable dd { position: relative; padding-right: 26px; }
+.props.editable .prm { position: absolute; right: 0; opacity: 0; transition: opacity var(--motion); }
+.props.editable dd:hover .prm, .props.editable dd:focus-within .prm { opacity: 1; }
+.props.editable .pv { all: unset; box-sizing: border-box; font: 12.5px var(--font-mono); height: 26px; padding: 0 6px; margin-left: -6px; border-radius: var(--radius-sm); min-width: 12ch; }
+.props.editable .pv:hover { background: color-mix(in srgb, var(--surface-raised) 70%, transparent); }
+.props.editable .pv:focus { background: var(--surface-raised); box-shadow: 0 0 0 1px var(--line-strong); }
+.props.editable .st.pick { all: unset; box-sizing: border-box; font: 11.5px var(--font-mono); height: 20px; padding: 0 5px 0 7px; border-radius: var(--radius-sm); border: 1px solid var(--line-strong); display: inline-flex; align-items: center; gap: 4px; background: var(--surface-raised); cursor: pointer; }
+.props.editable .st.pick:hover { border-color: var(--line-ink); }
+.props.editable .tg { display: inline-flex; align-items: center; gap: 3px; }
+.props.editable .tg .remove { width: 14px; height: 14px; }
+.props.editable .tg.add { all: unset; box-sizing: border-box; font: 11.5px var(--font-mono); padding: 0 7px; border: 1px dashed var(--line-strong); border-radius: var(--radius-sm); color: var(--text-muted); cursor: pointer; }
+.props.editable .padd { grid-column: 1 / -1; padding: 4px 0 0; }
+.ctxmenu { position: fixed; z-index: 60; }
 .props .v { font: 12.5px var(--font-mono); } .props .auto { font: 11.5px var(--font-mono); color: var(--text-muted); }
 .st { font: 11.5px var(--font-mono); height: 20px; padding: 0 7px; border-radius: var(--radius-sm); border: 1px solid var(--line-strong); display: inline-flex; align-items: center; background: var(--surface-raised); }
 .tg { font: 11.5px var(--font-mono); color: var(--text-muted); background: var(--surface-sunken); border-radius: var(--radius-sm); padding: 1px 6px; }
@@ -68,10 +82,10 @@ a.wl.miss, .wl.miss { color: var(--text-muted); text-decoration-style: dashed; }
 .chd { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 8px 0 12px; font: 11.5px var(--font-mono); color: var(--text-muted); }
 .chd .tag { height: 20px; }
 .chd .runs { color: var(--accent-text); display: inline-flex; align-items: center; gap: 6px; }
-.cell .code { margin: 0 8px; border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--line); }
+.cell .code { margin: 0 8px 8px; border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--line); }
 /* a cell's editor is as tall as its code (the kit's editor fills its box; its theme says 100 %) */
 .cell .code .pb-editor, .cell .code .cm-editor, .cell .code .cm-scroller { height: auto !important; }
-.out { margin: 8px; display: flex; flex-direction: column; gap: 6px; }
+.out { margin: 0 8px 8px; display: flex; flex-direction: column; gap: 6px; }
 .out.prev { opacity: 0.5; }
 .out pre { margin: 0; font: 12.5px/1.55 var(--font-mono); white-space: pre-wrap; padding: 2px 4px; }
 .out pre.stderr { color: var(--text-muted); }
@@ -136,10 +150,18 @@ a.wl.miss, .wl.miss { color: var(--text-muted); text-decoration-style: dashed; }
 .note .edit .pb-editor { flex: 1; }
 /* Live reads like Read: no gutter, the note's column and type, links in the deeper malachite */
 .note .edit.live { --link-live: var(--file-malachite); }
-.note .edit.live .cm-gutters { display: none; }
-.note .edit.live .cm-scroller { font-family: var(--font-sans) !important; font-size: 14.5px !important; line-height: 1.65 !important; }
-.note .edit.live .cm-content { max-width: 720px; margin: 0 auto; padding: 28px 40px 80px; }
-.note .edit.live .cm-activeLine { background: transparent; }
+/* the note's own editor only (> each step), not a cell's small editor drawn inside it */
+.livecol > .pb-editor > .cm-editor > .cm-scroller { overflow: visible; font-family: var(--font-sans) !important; font-size: 14.5px !important; line-height: 1.65 !important; }
+.livecol > .pb-editor > .cm-editor > .cm-scroller > .cm-gutters { display: none; }
+.livecol > .pb-editor > .cm-editor > .cm-scroller > .cm-content { padding: 0; }
+.livecol > .pb-editor > .cm-editor > .cm-scroller > .cm-content > .cm-line { padding: 0; }
+.livecol > .pb-editor > .cm-editor > .cm-scroller > .cm-content > .cm-activeLine { background: transparent; }
+.livecol > .pb-editor > .cm-editor.cm-focused { outline: none; }
+/* one scrolling column, as Read: the properties, then the text growing with its content */
+.note .edit.live { overflow: auto; display: block; }
+.livecol { max-width: 760px; margin: 0 auto; padding: 28px 40px 80px; }
+.livecol > .pb-editor, .livecol > .pb-editor > .cm-editor { height: auto; }
+.note .edit.live .cm-lp-cell .cell { margin: 4px 0 8px; }
 .fedit { flex: 1; min-height: 320px; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; }
 .fedit .pb-editor { flex: 1; }
 .fileview { flex: 1; min-height: 0; }
