@@ -40,7 +40,7 @@ export const api = {
   hub: () => call<HubConf>("GET", "/api/hub"),
   hubs: () => call<KnownHub[]>("GET", "/api/hubs"),
   hubSet: (key: "name" | "author" | "keep" | "ignore", value: string) => call<HubConf>("POST", "/api/hub/config", { key, value }),
-  workspace: () => call<{ workspace: Workspace | null; home: string }>("GET", "/api/workspace"),
+  workspace: () => call<{ workspace: Workspace | null; home: string; notHub?: { name: string; path: string } }>("GET", "/api/workspace"),
   /** { id }: a known hub; { path }: a folder or a file (a plain folder throws with `body.notHub`), `make` makes it a hub; {}: close. */
   enter: (to: { id: string } | { path: string; make?: boolean } | Record<string, never>) => call<Entered>("POST", "/api/workspace", to),
   hubNew: (name: string) => call<Entered>("POST", "/api/hubs/new", { name }),

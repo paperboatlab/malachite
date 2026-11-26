@@ -34,7 +34,8 @@ type Open = { hub: Hub; history: History; index: Index; sessions: Sessions; save
 /** What the page works in (the kit's `Workspace`): Malachite works in hubs only; null is the Start page. */
 export type Workspace = { kind: "hub"; root: string; name: string; hub: string } | null;
 
-export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new Control()) {
+/** `ask`: a plain folder the page offers to make a hub (NotAHub) instead of making it one unasked. */
+export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new Control(), ask?: string) {
   const clients = new Set<http.ServerResponse>();
   const emit = (e: Record<string, unknown>) => { const s = `data: ${JSON.stringify(e)}\n\n`; for (const c of clients) c.write(s); };
 
@@ -101,6 +102,7 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
     const next = dir ? work(dir) : null;
     cur?.close();
     cur = next;
+    ask = undefined;
     if (cur) addRecent({ kind: "hub", path: cur.hub.root, hub: cur.hub.id });
     emit({ type: "workspace" });
   };
@@ -134,7 +136,7 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
       const route = `${req.method} ${url.pathname}`;
       // what works without a hub: the workspace, the hubs, the shared store, About
       switch (route) {
-        case "GET /api/workspace": return send(res, 200, { workspace: workspace(), home: os.homedir() });
+        case "GET /api/workspace": return send(res, 200, { workspace: workspace(), home: os.homedir(), ...(ask && { notHub: { name: path.basename(ask), path: ask } }) });
         // { id }: a known hub; { path }: a folder or a file (its hub), { path, make: true }: a plain folder made a hub; {}: close
         case "POST /api/workspace": {
           if (typeof body.id === "string") {
@@ -380,11 +382,13 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(proces
   const port = pi >= 0 ? Number(args.splice(pi, 2)[1]) : Number(process.env.MALACHITE_PORT ?? DEFAULT_PORT);
   const dir = args[0];
   if (args.includes("--help") || args.includes("-h")) {
-    console.log("usage: malachite [<hub folder>] [--port N]\n  Serves Malachite on 127.0.0.1, in the hub (a plain folder becomes one: .malachite/hub.toml), or on the Start page.\n       malachite hub …  the hubs this machine knows (paperboat hub …)");
+    console.log("usage: malachite [<hub folder>] [--port N]\n  Serves Malachite on 127.0.0.1, in the hub the folder is in, or on the Start page (a plain folder: it asks to make it a hub).\n       malachite hub …  the hubs this machine knows (paperboat hub …)");
     process.exit(0);
   }
   if (dir) fs.mkdirSync(dir, { recursive: true });
-  const { server, hub } = serve(dir ?? null, port);
+  // a folder in a hub opens that hub; a plain one is the Start page, asking to make it one
+  const root = dir ? hubAbove(dir) : null;
+  const { server, hub } = serve(root, port, undefined, dir && !root ? path.resolve(dir) : undefined);
   server.on("listening", () => console.log(`Malachite: ${hub ? `${hub.name} (${hub.root})` : "no hub"} on http://127.0.0.1:${port}/`));
   server.on("error", (e) => { console.error(`malachite: ${e.message}`); process.exit(1); });
   for (const s of ["SIGINT", "SIGTERM"]) process.on(s, () => { server.close(); process.exit(0); });
