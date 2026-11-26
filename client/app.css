@@ -242,3 +242,6 @@ figure.media.img figcaption { margin-top: 6px; font-size: var(--size-2xs); color
 .panel.start { display: flex; }
 /* a menu bar's menu as wide as its longest item (the kit's sits in the narrow title's box and would wrap) */
 .menu-wrap > .menu { width: max-content; }
+
+/* Settings › Malachite: how it works today, read only (not a well: nothing to type) */
+.set-fact { white-space: nowrap; color: var(--text-muted); }

@@ -12,7 +12,7 @@ A **hub** is a folder of Markdown notes and the files around them. Notes link wi
 their properties in a front matter, and hold cells (fenced `julia` or `python` blocks) that run in the
 hub's session through `paperboatd`. Every change lands in an append-only log; a note can be sealed.
 
-**Status:** v0.1, the first app on the new platform. Runs, the Log page and Settings come next; Julix's plots and
+**Status:** v0.1, the first app on the new platform. Runs and the Log page come next; Julix's plots and
 the other apps' embeds when those apps are rebuilt.
 
 **Docs:** <https://paperboatlab.org/apps/malachite/> (sources in [`docs/`](docs/))

@@ -5,10 +5,10 @@
 // (@paperboatlab/ui): the menus and the command registry, the workspace parts, the file tree, the editor and
 // its languages, the plot, the canvas layout; Malachite brings the hub, its notes and cells. Files are the record.
 import {
-  About, AppMark, Dialog, Key, Menu, MenuBar, Notifications, Panel, PanelsKey, Rail, Search, Segmented, THEMES, ThemePicker, Toasts, WindowKeys, isEnabled, readStored, useShortcuts, useTheme, useToasts, writeStored,
+  About, AppMark, Dialog, Key, Menu, MenuBar, Notifications, Panel, PanelsKey, Rail, Search, Segmented, SettingRow, Settings, SettingsSection, ShortcutList, THEMES, ThemeSetting, Toasts, WindowKeys, isEnabled, readStored, useShortcuts, useTheme, useToasts, writeStored,
   type Command, type CommandMenu, type Credit, type MenuEntry, type SearchItem, type Theme,
 } from "@paperboatlab/ui";
-import { DEFAULT_EDITOR_SETTINGS, Editor, EditorTabs, afterClose, languageFor, livePreview, markdown, orderTabs, tabMenu, type Session } from "@paperboatlab/ui/editor";
+import { Editor, EditorSettingsPane, EditorTabs, afterClose, languageFor, livePreview, markdown, orderTabs, tabMenu, useEditorSettings, type Session } from "@paperboatlab/ui/editor";
 import { EditorView } from "@codemirror/view";
 import { FileTree, type FileEntry } from "@paperboatlab/ui/files";
 import { ConnectHub, HubSettings, OpenFile, SaveFile, type Hub as KitHub } from "@paperboatlab/ui/hub";
@@ -71,7 +71,11 @@ const LAYOUT = { l: [4, 4, 14, 36], m: [20, 4, 26, 36], r: [48, 4, 12, 36] } as 
 export function App() {
   const [theme, setTheme] = useState<Theme>(() => readStored("paperboat.theme", isTheme) ?? "system");
   const shown = useTheme(theme);
-  const look: CodeLook = useMemo(() => ({ settings: { ...DEFAULT_EDITOR_SETTINGS, wrap: true }, appTheme: shown }), [shown]);
+  // Settings › Editor: the note's editor, its cells and the other files
+  // ponytail: in this browser's localStorage, as Julix's; the shared settings file once Malachite has a ConfigStore
+  const [editor, setEditor] = useEditorSettings(undefined, "malachite.editor");
+  const look: CodeLook = useMemo(() => ({ settings: editor, appTheme: shown }), [editor, shown]);
+  const prose = useMemo(() => ({ ...editor, wrap: true }), [editor]);   // a note's text always wraps
   const [ws, setWs] = useState<Workspace | null | undefined>(undefined);   // undefined: not asked yet; null: the Start page
   const [home, setHome] = useState<string>();
   const [recent, setRecent] = useState<RecentEntry[]>([]);   // $PAPERBOAT_HOME/recent.json, every app's
@@ -80,7 +84,7 @@ export function App() {
   const [unsaved, setUnsaved] = useState<{ closing?: string; then: () => void } | null>(null);
   const [hub, setHub] = useState<HubConf | null>(null);
   const [hubs, setHubs] = useState<KnownHub[]>([]);
-  const [settings, setSettings] = useState(false);
+  const [settings, setSettings] = useState<string | null>(null);   // the page Settings is open on
   const [restored, setRestored] = useState(0);
   const [apps, setApps] = useState<{ name: string; label: string }[]>([]);   // installed beside Malachite: they open their own files   // a restored note redraws its editor from the file
   const [tree, setTree] = useState<Entry[]>([]);
@@ -468,7 +472,7 @@ export function App() {
     ...fileCommands({
       noun: "note", workspace: ws ?? null, file: !!ws && !!current, hubs: true, hubOnly: true, recent: recentItems,
       onNew: () => (ws ? newNote() : setDlg("connect")), onOpenFile: openFile, onOpenFolder: openFolder, onConnect: () => setDlg("connect"),
-      onSave: () => { flush.current(); }, onSaveAs: () => setDlg("save"), onCloseFile: closeFile, onCloseWorkspace: closeHub, onSettings: () => setSettings(true),
+      onSave: () => { flush.current(); }, onSaveAs: () => setDlg("save"), onCloseFile: closeFile, onCloseWorkspace: closeHub, onSettings: () => setSettings("general"),
     }),
     { id: "edit.undo", label: "Undo", menu: "edit", group: "undo", shortcut: "Ctrl Z", enabled: editing, why: "nothing to undo here", run: () => { const v = liveView.current; if (v) undo(v); } },
     { id: "edit.redo", label: "Redo", menu: "edit", group: "undo", shortcut: "Ctrl Shift Z", enabled: editing, why: "nothing to redo here", run: () => { const v = liveView.current; if (v) redo(v); } },
@@ -493,6 +497,7 @@ export function App() {
       run: () => setAsk({ title: "Empty the trash?", note: "Everything in it leaves the hub for good; it can't be restored.", danger: true, ok: "Empty trash", run: () => api.emptyTrash().then(() => setTrashVersion((n) => n + 1), fail) }) },
     { id: "help.docs", label: "Malachite docs", menu: "help", group: "docs", icon: "link-external", run: () => { window.open("https://paperboatlab.org/apps/malachite/", "_blank", "noopener"); } },
     { id: "help.issue", label: "Report an issue…", menu: "help", group: "docs", icon: "link-external", run: () => { window.open("https://github.com/paperboatlab/malachite/issues/new", "_blank", "noopener"); } },
+    { id: "help.keys", label: "Keyboard shortcuts", menu: "help", group: "keys", icon: "keys", shortcut: "Ctrl /", chord: { key: "/", ctrl: true }, run: () => setSettings("shortcuts") },
     { id: "help.about", label: "About Malachite", menu: "help", group: "about", run: () => openAbout() },
   ];
   useShortcuts(commands);
@@ -531,8 +536,6 @@ export function App() {
           <Notifications {...notes} />
           {ws && page === "notes" && <PanelsKey layout={LAYOUT} onToggle={(id) => (id === "l" ? setHideL : setHideR)((h) => !h)}
             panels={[{ id: "l", label: "Files", keys: "Ctrl B", shown: !hideL }, { id: "r", label: "Links", keys: "Ctrl Alt B", shown: !hideR }]} />}
-          <span className="lsep" />
-          <ThemePicker theme={theme} onChange={changeTheme} />
           <WindowKeys />
         </span>
       </header>
@@ -540,8 +543,8 @@ export function App() {
       {ws && <Rail label="Malachite pages" wide={wide} onWide={setWide} page={page} onPage={(p) => setPage(p as Page)}
         pages={[{ id: "notes", label: "Notes", icon: "a-notes", keys: "Alt+1", count: nRunning ? "live" : mdCount }, { id: "views", label: "Views", icon: "a-views", keys: "Alt+2" },
           { id: "graph", label: "Graph", icon: "a-trace", keys: "Alt+3" }, { id: "log", label: "Log", icon: "a-log", keys: "Alt+4" }]}
-        foot={[{ id: "search", label: "Search", icon: "search", keys: "Ctrl+K" }, { id: "settings", label: "Settings", icon: "a-settings" }, { id: "help", label: "Help", icon: "question", keys: "F1" }]}
-        onFoot={(id) => { if (id === "search") setSearch(true); else if (id === "settings") setSettings(true); else openAbout(); }} />}
+        foot={[{ id: "search", label: "Search", icon: "search", keys: "Ctrl+K" }, { id: "settings", label: "Settings", icon: "a-settings", keys: "Ctrl+," }, { id: "help", label: "Help", icon: "question", keys: "F1" }]}
+        onFoot={(id) => { if (id === "search") setSearch(true); else if (id === "settings") setSettings("general"); else openAbout(); }} />}
 
       {!ws && <main className="pages"><div className="bay"><section className="panel start" aria-label="Start">
         {ws === null && <Start app="Malachite" noun="note" nouns="notes" hubs hubOnly recent={recent} home={home}
@@ -584,7 +587,7 @@ export function App() {
                 {!current && <div className="empty"><AppMark app="malachite" size={72} idle label="" /><p>Open a note from the hub, or make one.</p><Key kind="primary" icon="new-file" onClick={() => newNote("")}>New note</Key></div>}
                 {note && mode === "read" && <ReadView note={note} runs={runs} resolve={resolve} look={look} onLink={onLink} onRun={runCell} onStop={stopCell} media={mediaFor} />}
                 {note && mode !== "read" && (() => {
-                  const editor = <Editor key={`${note.path}:${note.sealed}:${mode}:${restored}`} value={draft ?? note.text} language={markdown} settings={look.settings} appTheme={look.appTheme}
+                  const editor = <Editor key={`${note.path}:${note.sealed}:${mode}:${restored}`} value={draft ?? note.text} language={markdown} settings={prose} appTheme={look.appTheme}
                     readOnly={note.sealed} ariaLabel={`${note.title}, Markdown`} onChange={setDraft}
                     extra={mode === "live" ? liveExt : dropExt} onView={(v) => { liveView.current = v; }} />;
                   return (
@@ -638,18 +641,35 @@ export function App() {
       </main>}
 
       {search && <Search items={searchItems} scopes={["All", "Notes", "Files", "Commands"]} placeholder={`Search ${hub?.name ?? "the hub"} or run a command`} onClose={() => setSearch(false)} />}
-      {settings && !hub && <Dialog title="Settings" onClose={() => setSettings(false)}><p>Open a hub to set it up here. The theme is in View › Theme, for every Paperboat app.</p></Dialog>}
-      {settings && hub && (
-        <Dialog title="Settings" tags={["Hub", hub.name]} wide onClose={() => setSettings(false)}>
-          <HubSettings hub={kitHub({ ...hub, shown: hub.shown })} values={{ author: hub.author, keep: hub.keep, ignore: hub.ignore }}
+      {settings && <Settings app="Malachite" key={settings} page={settings} onClose={() => setSettings(null)} pages={[
+        { id: "general", label: "General", icon: "settings-gear", body: <ThemeSetting theme={theme} onTheme={changeTheme} /> },
+        { id: "malachite", label: "Malachite", icon: "mark-malachite", body: <>
+          <SettingsSection title="Notes">
+            <SettingRow label="A note opens in" hint="Read and Edit are in the note's foot and in View"><span className="set-fact">Live</span></SettingRow>
+            <SettingRow label="Lines" hint="A note's text always wraps; Editor › Wrap lines is for its cells and other files"><span className="set-fact">Wrapped</span></SettingRow>
+            <SettingRow label="Cells run" hint="In the hub's Julia or Python session, one each, started by the first cell; the Runtimes key shows them"><span className="set-fact">In the note's folder</span></SettingRow>
+          </SettingsSection>
+          <SettingsSection title="New hubs">
+            <SettingRow label="Folder" hint="New hub makes them here; Connect to a hub… opens one anywhere"><span className="set-fact">~/Documents/paperboat</span></SettingRow>
+          </SettingsSection>
+          <p className="settings-note">Nothing here to change yet: this is how Malachite works today.</p>
+        </> },
+        { id: "editor", label: "Editor", icon: "file-code", body: <EditorSettingsPane settings={editor} onSettings={setEditor} lintNote="Julia and Python, by the hub's running session" /> },
+        { id: "hub", label: "Hub", icon: "folder", body: hub
+          ? <HubSettings hub={kitHub({ ...hub, shown: hub.shown })} values={{ author: hub.author, keep: hub.keep, ignore: hub.ignore }}
             onSet={(k, v) => api.hubSet(k as "author" | "keep" | "ignore", String(v)).then(setHub, fail)}
             onRename={() => setAsk({ title: "Rename the hub", label: "Name", value: hub.name, ok: "Rename", note: "The folder keeps its name; apps show this one.",
               run: (n) => n.trim() && api.hubSet("name", n.trim()).then((h) => { setHub(h); document.title = `${h.name} · Malachite`; api.hubs().then(setHubs); loadWs(); }, fail) })}
             onMove={() => show({ title: "Move the hub", detail: `Close it first, then: paperboat hub move ${hub.name} <folder>` })}
             onRemove={() => setAsk({ title: `Take ${hub.name} off the list?`, note: "Paperboat forgets it; the folder and its files stay. Opening it again adds it back.", danger: true, ok: "Remove from the list",
               run: () => api.hubForget(hub.id).then(() => api.hubs().then(setHubs), fail) })} />
-        </Dialog>
-      )}
+          : <SettingsSection title="The hub">
+            <SettingRow label="No hub open" hint="A hub's name, author, history and folder are set here once one is open">
+              <Key size="sm" onClick={() => { setSettings(null); setDlg("connect"); }}>Connect to a hub…</Key>
+            </SettingRow>
+          </SettingsSection> },
+        { id: "shortcuts", label: "Shortcuts", icon: "keys", body: <ShortcutList commands={commands} menus={MENUS} /> },
+      ]} />}
       {dlg === "connect" && <ConnectHub app="Malachite" hubOnly hubs={hubs.map(kitHub)} onConnect={switchHub} onNew={newHub} onClose={() => setDlg("")} />}
       {dlg === "open" && ws && <OpenFile what="a note" types={["md"]} kinds="Notes" hub={kitHub(hubs.find((h) => h.id === ws.hub) ?? { id: ws.hub, name: ws.name, shown: ws.root, place: "local" })}
         list={async () => entries} describe={describe} onOpen={(p) => { setDlg(""); open(p); }} onClose={() => setDlg("")} />}
@@ -695,7 +715,6 @@ function FileView({ path, text, look, onChange, media, apps, onApp }: { path: st
   const t = typeOf(path), owner = OWNER[t], language = languageFor(path);
   const app = owner && apps.find((a) => a.label === owner || a.name === owner.toLowerCase());
   const session = language.runtime === "julia" || language.runtime === "python" ? SESSIONS[language.runtime] : undefined;
-  const settings = useMemo(() => ({ ...look.settings, wrap: false }), [look.settings]);
   return (
     <div className="fileview">
       {(owner || mediaOf(path) || text === null) && (
@@ -709,7 +728,7 @@ function FileView({ path, text, look, onChange, media, apps, onApp }: { path: st
       {mediaOf(path) && media(path, "")}
       {t === "csv" && text !== null && <CsvPlot text={text} />}
       {text !== null && (
-        <div className="fedit"><Editor key={path} value={text} language={language} session={session} settings={settings} appTheme={look.appTheme} ariaLabel={`${nameOf(path)}, ${language.label}`} onChange={onChange} /></div>
+        <div className="fedit"><Editor key={path} value={text} language={language} session={session} settings={look.settings} appTheme={look.appTheme} ariaLabel={`${nameOf(path)}, ${language.label}`} onChange={onChange} /></div>
       )}
     </div>
   );
