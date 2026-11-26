@@ -607,7 +607,7 @@ export function App() {
                 })()}
                 {current && t !== "md" && <FileView path={current} text={plain} look={look} onChange={setDraft} media={mediaFor} apps={apps}
                   onApp={(app, copy) => { const label = apps.find((a) => a.name === app)?.label ?? app;
-                    api.openIn(app, current, copy).then((r) => { window.open(r.url, "_blank"); show({ title: copy ? `Copied to ${label}` : `Opened in ${label}`, detail: copy ? `${r.folder}/${r.file} · not in the hub` : `${label} works in ${hub?.name ?? "the hub"}`, state: "done" }); }, fail); }} />}
+                    api.openIn(app, current, copy).then((r) => { window.open(r.url, label);  /* named: the Launcher opens it as that app's window */ show({ title: copy ? `Copied to ${label}` : `Opened in ${label}`, detail: copy ? `${r.folder}/${r.file} · not in the hub` : `${label} works in ${hub?.name ?? "the hub"}`, state: "done" }); }, fail); }} />}
               </div>
               {note && <div className="efoot"><span>markdown · {note.body.split(/\s+/).filter(Boolean).length} words · {note.cells.length} cells</span>
                 <Segmented label="View" value={mode} onChange={setMode} options={[{ value: "read", label: "Read" }, { value: "live", label: "Live" }, { value: "edit", label: "Edit" }]} /><span>{links?.backlinks.length ?? 0} backlinks · {links?.links.length ?? 0} links</span></div>}
