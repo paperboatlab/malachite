@@ -135,7 +135,7 @@ export function App() {
 
   const reload = useCallback(() => { api.tree().then(setTree, fail); api.index().then(setItems, fail); }, [fail]);
   const loadRecent = useCallback(() => api.recent().then((r) => setRecent(r.recent), () => {}), []);
-  const loadWs = useCallback(() => api.workspace().then((r) => { setWs(r.workspace); setHome(r.home); }, fail), [fail]);
+  const loadWs = useCallback(() => api.workspace().then((r) => { setWs(r.workspace); setHome(r.home); if (r.notHub) setNotHub(r.notHub); }, fail), [fail]);
   useEffect(() => {
     loadWs();
     api.settings().then((v) => setTheme(v.theme), () => {});

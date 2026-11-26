@@ -80,3 +80,15 @@ test("no hub at start: the Start page", async () => {
     assert.equal((await fetch(`${base}/api/hub`)).status, 409);
   } finally { server.close(); }
 });
+
+test("started on a plain folder: the Start page asks, the folder stays plain", async () => {
+  const plain = tmp("ws-ask-");
+  const { server } = serve(null, 0, new Control(path.join(home, "none.sock"), false), plain);
+  await new Promise((r) => server.once("listening", r));
+  const base = `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`;
+  try {
+    const r = await fetch(`${base}/api/workspace`).then((x) => x.json());
+    assert.deepEqual([r.workspace, r.notHub], [null, { name: path.basename(plain), path: plain }]);
+    assert.ok(!fs.existsSync(path.join(plain, ".malachite")));
+  } finally { server.close(); }
+});
