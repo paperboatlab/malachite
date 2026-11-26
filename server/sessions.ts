@@ -158,8 +158,11 @@ export class Sessions {
     return (await p).rt.request(op, args);
   }
 
+  /** Ends every session (the hub closes); the daemon connection stays for the next one. */
+  stop() { for (const lang of [...this.sessions.keys()]) this.drop(lang); }
+
   /** Ends every session and the daemon connection (which releases the leases). */
-  close() { for (const lang of [...this.sessions.keys()]) this.drop(lang); this.control.close(); }
+  close() { this.stop(); this.control.close(); }
 
   /** A fresh session: the namespace is lost; the next cell starts a new one. */
   restart(lang: Lang) { this.drop(lang); return {}; }

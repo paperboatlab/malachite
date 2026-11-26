@@ -21,8 +21,24 @@ The hubs on this machine
 ------------------------
 
 ``$PAPERBOAT_HOME/hubs.toml`` lists the hubs this machine knows, with where each lives here. Every
-app reads it; each app picks its own hub from the selector in its bar. The Launcher lists and sets up
-hubs but never picks one for an app.
+app reads it; each app picks its own hub from the workspace well in its bar (after the menus), and
+switching in one app leaves the others where they are. The Launcher lists and sets up hubs but never
+picks one for an app.
+
+Malachite switches hubs without a restart: opening another one ends the sessions of the one before and
+saves its history. Close hub goes back to the Start page.
+
+What every app shares
+---------------------
+
+Two files beside ``hubs.toml``, read by every Paperboat app and written whole (to a temporary file,
+then renamed):
+
+- ``recent.json``: what was opened, newest first, 40 at most: folders, hubs and files, each with the
+  app that opened it. Malachite's Open recent and Start page show the hubs and its own notes; Clear
+  recent takes those off and leaves the other apps' entries.
+- ``settings.json``: the theme every app starts in (``light``, ``dark`` or ``system``). Changing it in
+  one app writes it here.
 
 Cloud hubs
 ----------
@@ -34,6 +50,6 @@ example, "Dropbox's app syncs it".
 When two machines change the same file, the sync app leaves a conflict copy. Malachite recognises
 Dropbox's ``(… conflicted copy …)``, Syncthing's ``.sync-conflict-…`` and rclone bisync's
 ``.conflictN``: it marks them "conflict" in the tree, says so when the hub opens, and counts them in red
-in the selector and in ``paperboat hub list``.
+in the bar's hub menu and in ``paperboat hub list``.
 
 .. note:: Not written yet: making a cloud hub, resolving a conflict copy.

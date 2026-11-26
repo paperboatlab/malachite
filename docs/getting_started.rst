@@ -10,7 +10,44 @@ and Python runtimes too.
    paperboat app open malachite [<folder>]      # http://127.0.0.1:30474
    paperboat app stop malachite
 
-Any folder opens as a hub: its settings are written on first open. The ``tank-lab`` example hub is a
-good place to start.
+A folder named on the command line opens as a hub: its settings are written on first open. The
+``tank-lab`` example hub is a good place to start.
+
+Without a folder, Malachite opens on the **Start** page: Open a hub… (the hubs this machine knows),
+New hub…, Open folder… and Open file…, and the hubs and notes you opened last. Malachite works in hubs
+only: a plain folder asks whether to make it a hub (its files stay where they are) or to open one of
+your hubs. A note opened from outside the hub switches to the hub it lies in.
+
+The window
+----------
+
+The bar holds the menus (File, Edit, View, Note, Help; every item is in the command search too, Ctrl K)
+and, after them, the hub you work in: its menu switches to another hub, makes a new one or closes this
+one (back to Start). The keys:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Keys
+     - Does
+   * - Ctrl N
+     - New note
+   * - Ctrl O
+     - Open file…: a picker over the hub
+   * - Ctrl K Ctrl O
+     - Open folder…: a hub, or a folder to make one
+   * - Ctrl S, Ctrl Shift S
+     - Save (notes save themselves as you type), Save as…
+   * - Ctrl W
+     - Close file
+   * - Ctrl K
+     - Search the hub or run a command
+   * - Ctrl B, Ctrl Alt B
+     - Show or hide the files and the links
+   * - Ctrl ,
+     - Settings
+
+In a browser, Open folder… and Open file… take a typed path; in a Paperboat window they open the
+system's dialog. The theme (View › Theme) is the one every Paperboat app starts in.
 
 .. note:: Not written yet: a first note with a cell, a link and a property, with a screenshot.

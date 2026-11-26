@@ -5,8 +5,8 @@ workspace (pb#415). This page is the map.
 
 ## 1. Overview
 
-Malachite is an app server and a page. The server owns the hub (a folder) and speaks two protocols of
-the platform: `paperboat-control/0` to `paperboatd` for leases, and `paperboat-runtime/0` to the
+Malachite is an app server and a page. The server owns the hub it works in (a folder; one at a time,
+switched at runtime; none is the page's Start) and speaks two protocols of the platform: `paperboat-control/0` to `paperboatd` for leases, and `paperboat-runtime/0` to the
 session runtimes the leases start. The page is a client of the server only.
 
 ```mermaid
@@ -39,6 +39,10 @@ flowchart LR
   `placeOf` names it from the path (Dropbox, OneDrive, Google Drive, iCloud Drive), and `conflictsIn`
   finds the copies a sync client leaves when two machines change a file (marked in the tree, told on
   open). Paperboat syncs nothing itself; the per-machine history bundles make that safe.
+  It also keeps Malachite's side of the shared store (plans/2026-11-26_11-05_one_file_workflow.md, "The
+  contract every app follows"): `recent.json` (hubs and notes as they open, newest first, 40 at most, every
+  app's entries kept) and `settings.json` (the theme), both written whole to a temporary file, then renamed;
+  `hubAbove` finds the hub a path lies in.
 - `server/history.ts`: `History`: Git underneath, never shown. The Git folder lives outside the hub
   (`$PAPERBOAT_HOME/hubs/<id>/git`, work tree = the hub); a version a few seconds after files change
   (described in words), `versions` (the hub's or one file's), `restore` (the version before is kept);
@@ -57,20 +61,32 @@ flowchart LR
   language, run in their note's folder, and their outputs are written to
   `.malachite/out/<note id>/<cell hash>.json` with the runtime, image digest and backend that made them.
   Interrupt goes through the daemon (SIGINT); no answer within 3 s restarts the session.
-- `server/main.ts`: the HTTP server: another app's file opens there (`paperboat app open <app> <hub> --no-open`,
+- `server/main.ts`: the HTTP server. The workspace is switched at runtime (`POST /api/workspace`: a known
+  hub by id, a folder or a file by path, which opens the hub it lies in, `make` turning a plain folder into a
+  hub, or nothing: the Start page); a plain folder answers 409 with `notHub`, as Malachite works in hubs
+  only. Opening a hub builds its `Hub`, `History`, `Index`, `Sessions` and watcher; the one before closes
+  after (its sessions end, its history is saved, `serving.pid` goes), so a hub that can't open leaves the
+  old one open. Every hub route answers 409 while none is open. Another app's file opens there (`paperboat app open <app> <hub> --no-open`,
   then `?open=<path>`: the app works in the hub) or is copied out to `~/Documents/paperboat/<app>/` (no tie
   to the hub); the page from `dist/`, the JSON API, Server-Sent Events, a file's bytes
   with byte ranges (a video seeks), and uploads (to a temporary name, then renamed; a replaced file goes to
   the trash, a taken name becomes "<name> (2)").
-- `client/`: `App.tsx` (the shell: bar, rail, cards, tabs, search, dialogs; a note as Read, Live (the kit
+- `client/`: `App.tsx` (the shell: bar with the menu bar and the hub's workspace well, rail, cards, tabs,
+  search, dialogs; one command list (`Command[]`: the kit's `fileMenu` with `hubOnly`, then Edit, View, Note,
+  Help) read by `MenuBar`, the command search and `useShortcuts`, chords such as Ctrl K Ctrl O included; the
+  Start page with no hub; Open a hub (`ConnectHub`), our picker over the hub for Open file… and Save as…,
+  `NotAHub`, `Unsaved` (the autosave waits while it asks), `TypedPath` in a browser and
+  `window.paperboatShell`'s dialogs in a Paperboat window; tabs kept per hub; a note as Read, Live (the kit
   editor with its `livePreview`, a cell's Run key saving then running it) or Edit; files that aren't notes, a CSV
   plotted), `Note.tsx` (properties, the Read view, cells and outputs), `fileMenu.ts` (the brand file menu
   for the kit's tree), `Graph.tsx` (the hub graph and the local graph, the kit's note graph), `Trash.tsx` (the hub card's trash), `Media.tsx` (pictures, videos, sounds: the kit's player and image
   editor; Read draws them into `.media-slot`s, Live through the kit's `embeds`), `Views.tsx` and `views.ts`
   (board, list, timeline over `views/*.toml`), `Side.tsx` (the Links card, the
   rows for the kit's runtimes key from `GET /api/runtimes`), `markdown.ts` (marked with wikilinks and embeds), `files.tsx`, `api.ts`.
-- **From the kit** (`@paperboatlab/ui`): the shell's parts (the bar `.win > .bar`, Rail, Panel, PanelsKey, Search,
-  Menu, Dialog, ThemePicker, Toasts, Notifications, RuntimesKey), the file tree (`/files`), the editor with its
+- **From the kit** (`@paperboatlab/ui`): the shell's parts (the bar `.win > .bar`, MenuBar and the command
+  registry, WindowKeys, Rail, Panel, PanelsKey, Search, Menu, Dialog, ThemePicker, Toasts, Notifications,
+  RuntimesKey), the one file workflow (`/workspace`: Start, WorkspaceWell, fileMenu, recentMenu, NotAHub,
+  Unsaved, TypedPath, shell; `/hub`: ConnectHub, OpenFile, SaveFile, HubSettings), the file tree (`/files`), the editor with its
   languages, themes and tab strip (`/editor`, `EditorTabs`:
   notes as Markdown, cells read-only, code files linted and completed by the hub's session through
   `POST /api/ask`), the plot (`/plot`), the graph layout (`/canvas`, drawn with React Flow). Malachite
@@ -92,6 +108,8 @@ flowchart LR
 6. **Formats it doesn't own are not parsed.** A `.pst`, `.mo` or `.mx` is indexed by name and type until
    its app publishes an index manifest; its embed says which app will draw it.
 7. **Local only.** The server listens on 127.0.0.1 and answers only its own Host and Origin.
+10. **One hub at a time, only hubs.** The server works in one hub or none; switching closes the old one's
+   sessions and saves its history. A plain folder is never worked in: it becomes a hub first.
 8. **A note's text is not trusted as HTML.** Raw HTML in Markdown is shown as text, links go to
    http(s), mailto or the hub, and runtime HTML output is shown as its text.
 

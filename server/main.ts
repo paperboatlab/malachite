@@ -1,5 +1,6 @@
-// The Malachite app server: `malachite <hub> [--port N]`. Serves the page (dist/), a JSON API over the
-// hub, and Server-Sent Events for what changes (files, cells, runtimes). It listens on 127.0.0.1 only
+// The Malachite app server: `malachite [<hub>] [--port N]`. Serves the page (dist/), a JSON API over the
+// hub it works in (switched at runtime: open, new, close; none is the Start page), the shared store
+// (`recent.json`, `settings.json`), and Server-Sent Events for what changes (files, cells, runtimes). It listens on 127.0.0.1 only
 // and answers only requests addressed to it (Host) from its own page (Origin), so a web page elsewhere
 // can't drive it.
 import { spawn } from "node:child_process";
@@ -14,7 +15,7 @@ import { bodyHash, parse, type Lang } from "./note.ts";
 import { NoSession, Sessions } from "./sessions.ts";
 import { History } from "./history.ts";
 import { Hub, HubError, SCHEMA, type HubKey } from "./hub.ts";
-import { conflictsIn, defaultFolder, forget, infos, placeOf, remember, tilde } from "./hubs.ts";
+import { addRecent, conflictsIn, defaultFolder, dropRecent, forget, hubAbove, infos, placeOf, recent, remember, setTheme, settings, tilde } from "./hubs.ts";
 
 export const DEFAULT_PORT = 30474;   // Malachite's home port (paperboat/apps.toml); other hubs get --port from the CLI (30500–30599)
 const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
@@ -28,54 +29,83 @@ const TYPES: Record<string, string> = {
 };
 const UPLOAD_MAX = 2 ** 31;   // 2 GiB: a video from a lab camera, not a disk image
 
-export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control()) {
-  const hub = new Hub(hubDir);
-  remember(hub.id, hub.root);   // $PAPERBOAT_HOME/hubs.toml: every app's list of hubs
-  // while this serves the hub, `paperboat hub move` refuses to move it from under us
-  const serving = path.join(hub.root, ".malachite", "serving.pid");
-  fs.writeFileSync(serving, String(process.pid));
-  process.on("exit", () => { try { if (fs.readFileSync(serving, "utf8") === String(process.pid)) fs.rmSync(serving); } catch { /* gone */ } });
-  const hubInfo = () => ({ ...hub.conf, root: hub.root, shown: tilde(hub.root), place: placeOf(hub.root), conflicts: conflictsIn(hub.root) });
-  // the history: other machines' pasts first, then what changed while no Malachite was watching
-  const history = new History(hub);
-  history.merge();
-  history.save(history.versions(".", 1).length ? "Changes while Malachite was closed" : undefined);
-  let packTimer: NodeJS.Timeout | undefined, saveTimer: NodeJS.Timeout | undefined;
-  const pack = () => { clearTimeout(packTimer); try { history.pack(); } catch (e) { console.error(`malachite: history: ${(e as Error).message}`); } };
-  const saveSoon = () => {   // a version a few seconds after the last change; the bundle every few minutes
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      try { if (history.save() && !packTimer) packTimer = setTimeout(() => { packTimer = undefined; pack(); }, 5 * 60_000).unref(); }
-      catch (e) { console.error(`malachite: history: ${(e as Error).message}`); }
-    }, 3000).unref();   // never what keeps the process up: closing saves and packs anyway
-  };
-  process.on("exit", () => { clearTimeout(saveTimer); try { history.save(); history.pack(); } catch { /* the next open saves it */ } });
-  const index = new Index(hub);
-  index.build();
+/** What is open: one hub with its history, index and sessions; `close` ends them (and saves the history). */
+type Open = { hub: Hub; history: History; index: Index; sessions: Sessions; saveSoon: () => void; holdSave: () => void; close: () => void };
+/** What the page works in (the kit's `Workspace`): Malachite works in hubs only; null is the Start page. */
+export type Workspace = { kind: "hub"; root: string; name: string; hub: string } | null;
+
+export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new Control()) {
   const clients = new Set<http.ServerResponse>();
   const emit = (e: Record<string, unknown>) => { const s = `data: ${JSON.stringify(e)}\n\n`; for (const c of clients) c.write(s); };
-  hub.onEvent = (e) => emit({ type: "log", event: e });
-  const sessions = new Sessions(hub, control, emit);
 
-  // the index follows the files: whoever changed them (this server, an editor, git)
-  let pending = new Set<string>(), timer: NodeJS.Timeout | undefined;
-  const watcher = fs.watch(hub.root, { recursive: true }, (_ev, f) => {
-    if (!f) return;
-    const rel = f.toString().split(path.sep).join("/");
-    if (rel.split("/").some((p) => p.startsWith(".") || p === "node_modules") || rel.endsWith(".tmp")) return;
-    pending.add(rel);
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      const changed = [...pending];
-      pending = new Set();
-      for (const r of changed) { try { index.update(r); } catch { /* outside or gone */ } }
-      // a folder that moved takes its files with it
-      for (const p of index.items.keys()) if (!fs.existsSync(path.join(hub.root, p))) index.items.delete(p);
-      for (const f of hub.files()) if (!index.items.has(f)) index.update(f);
-      emit({ type: "files", changed });
-      saveSoon();
-    }, 120);
-  });
+  /** Opens a hub: its settings (made on a plain folder), the history, the index, the sessions, the watcher. */
+  const work = (dir: string): Open => {
+    const hub = new Hub(dir);
+    remember(hub.id, hub.root);   // $PAPERBOAT_HOME/hubs.toml: every app's list of hubs
+    // while this serves the hub, `paperboat hub move` refuses to move it from under us
+    const serving = path.join(hub.root, ".malachite", "serving.pid");
+    fs.writeFileSync(serving, String(process.pid));
+    // the history: other machines' pasts first, then what changed while no Malachite was watching
+    const history = new History(hub);
+    history.merge();
+    history.save(history.versions(".", 1).length ? "Changes while Malachite was closed" : undefined);
+    let packTimer: NodeJS.Timeout | undefined, saveTimer: NodeJS.Timeout | undefined;
+    const pack = () => { clearTimeout(packTimer); try { history.pack(); } catch (e) { console.error(`malachite: history: ${(e as Error).message}`); } };
+    const saveSoon = () => {   // a version a few seconds after the last change; the bundle every few minutes
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+        try { if (history.save() && !packTimer) packTimer = setTimeout(() => { packTimer = undefined; pack(); }, 5 * 60_000).unref(); }
+        catch (e) { console.error(`malachite: history: ${(e as Error).message}`); }
+      }, 3000).unref();   // never what keeps the process up: closing saves and packs anyway
+    };
+    const index = new Index(hub);
+    index.build();
+    hub.onEvent = (e) => emit({ type: "log", event: e });
+    const sessions = new Sessions(hub, control, emit);
+
+    // the index follows the files: whoever changed them (this server, an editor, git)
+    let pending = new Set<string>(), timer: NodeJS.Timeout | undefined;
+    const watcher = fs.watch(hub.root, { recursive: true }, (_ev, f) => {
+      if (!f) return;
+      const rel = f.toString().split(path.sep).join("/");
+      if (rel.split("/").some((p) => p.startsWith(".") || p === "node_modules") || rel.endsWith(".tmp")) return;
+      pending.add(rel);
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const changed = [...pending];
+        pending = new Set();
+        for (const r of changed) { try { index.update(r); } catch { /* outside or gone */ } }
+        // a folder that moved takes its files with it
+        for (const p of index.items.keys()) if (!fs.existsSync(path.join(hub.root, p))) index.items.delete(p);
+        for (const f of hub.files()) if (!index.items.has(f)) index.update(f);
+        emit({ type: "files", changed });
+        saveSoon();
+      }, 120);
+    });
+    const close = () => {
+      watcher.close(); clearTimeout(timer); clearTimeout(saveTimer); clearTimeout(packTimer);
+      sessions.stop();   // this hub's sessions end; the daemon connection stays for the next hub
+      try { history.save(); history.pack(); } catch { /* the next open saves it */ }
+      try { if (fs.readFileSync(serving, "utf8") === String(process.pid)) fs.rmSync(serving); } catch { /* gone */ }
+    };
+    return { hub, history, index, sessions, saveSoon, holdSave: () => clearTimeout(saveTimer), close };
+  };
+
+  let cur: Open | null = null;
+  process.on("exit", () => cur?.close());
+  const workspace = (): Workspace => (cur ? { kind: "hub", root: cur.hub.root, name: cur.hub.name, hub: cur.hub.id } : null);
+  /** Switches the hub at runtime (null: none, the Start page): the new one opens before the old one closes,
+   *  so a hub that can't open leaves the page where it was. */
+  const switchTo = (dir: string | null) => {
+    if (dir && cur && fs.realpathSync(dir) === cur.hub.root) return;
+    const next = dir ? work(dir) : null;
+    cur?.close();
+    cur = next;
+    if (cur) addRecent({ kind: "hub", path: cur.hub.root, hub: cur.hub.id });
+    emit({ type: "workspace" });
+  };
+  const need = (): Open => { if (!cur) throw new HubError("no hub is open", 409); return cur; };
+  if (hubDir) switchTo(hubDir);
 
   const host = () => [`127.0.0.1:${server.address() && (server.address() as any).port}`, `localhost:${(server.address() as any)?.port}`];
 
@@ -95,33 +125,80 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
       const q = (k: string) => { const v = url.searchParams.get(k); if (v === null) throw new HubError(`missing ${k}`); return v; };
       // a file's bytes (a picture dropped in a note, an edited picture): before the JSON body is read
       if (req.method === "POST" && url.pathname === "/api/upload") {
+        const { hub, index } = need();
         const p = await upload(req, hub, q("path"), url.searchParams.get("replace") === "1");
         index.update(p);
         return send(res, 200, { path: p });
       }
       const body = req.method === "GET" ? {} : await json(req);
       const route = `${req.method} ${url.pathname}`;
+      // what works without a hub: the workspace, the hubs, the shared store, About
+      switch (route) {
+        case "GET /api/workspace": return send(res, 200, { workspace: workspace(), home: os.homedir() });
+        // { id }: a known hub; { path }: a folder or a file (its hub), { path, make: true }: a plain folder made a hub; {}: close
+        case "POST /api/workspace": {
+          if (typeof body.id === "string") {
+            const h = infos().find((x) => x.id === body.id);
+            if (!h) throw new HubError("no such hub", 404);
+            if (h.missing) throw new HubError(`can't find ${h.name}'s folder (${h.shown})`, 410);
+            switchTo(h.path);
+            return send(res, 200, { workspace: workspace() });
+          }
+          if (typeof body.path !== "string") { switchTo(null); return send(res, 200, { workspace: null }); }
+          const typed = body.path.trim();
+          if (!/^(\/|~(\/|$)|[A-Za-z]:[\\/])/.test(typed)) throw new HubError("a whole path: from / or ~");
+          const abs = path.resolve(typed.replace(/^~(?=$|[\\/])/, os.homedir()));
+          if (!fs.existsSync(abs)) { dropRecent({ kind: "hub", path: abs }); dropRecent({ kind: "file", path: abs }); throw new HubError(`${tilde(abs)} isn't there`, 404); }
+          const isFile = fs.statSync(abs).isFile(), folder = isFile ? path.dirname(abs) : abs;
+          const root = hubAbove(folder) ?? (body.make === true ? folder : null);
+          // Malachite works in hubs only: a plain folder asks to become one (the page's NotAHub)
+          if (!root) return send(res, 409, { error: `${path.basename(folder)} isn't a hub`, notHub: { name: path.basename(folder), path: folder } });
+          switchTo(root);
+          const open = isFile ? path.relative(cur!.hub.root, fs.realpathSync(abs)).split(path.sep).join("/") : undefined;
+          if (open) addRecent({ kind: "file", path: path.join(cur!.hub.root, open), hub: cur!.hub.id });
+          return send(res, 200, { workspace: workspace(), open });
+        }
+        case "GET /api/hubs": return send(res, 200, infos());
+        case "POST /api/hubs/remove": { forget(String(body.id)); return send(res, 200, {}); }
+        case "POST /api/hubs/new": {   // New hub…: in ~/Documents/paperboat/<name>, and Malachite works in it
+          const name = String(body.name ?? "").trim();
+          if (!name || /[\\/"]/.test(name)) throw new HubError("a hub's name has no / \\ or quotes");
+          const dir = defaultFolder(name);
+          if (fs.existsSync(dir)) throw new HubError(`${dir} exists: pick another name`, 409);
+          fs.mkdirSync(dir, { recursive: true });
+          switchTo(dir);
+          return send(res, 200, { workspace: workspace() });
+        }
+        case "GET /api/recent": return send(res, 200, { version: 1, recent: recent() });
+        case "POST /api/recent": {   // a file the page opened, in the open hub
+          const { hub } = need();
+          addRecent({ kind: "file", path: hub.resolve(String(body.path)), hub: hub.id });
+          return send(res, 200, {});
+        }
+        case "POST /api/recent/clear": { dropRecent(); return send(res, 200, {}); }
+        case "GET /api/settings": return send(res, 200, settings());
+        case "PUT /api/settings": {
+          const t = body.theme;
+          if (t !== "light" && t !== "dark" && t !== "system") throw new HubError("theme is light, dark or system");
+          setTheme(t);
+          return send(res, 200, settings());
+        }
+        // About: the hub format and Paperboat's version (null: not installed); never starts paperboatd
+        case "GET /api/about": return send(res, 200, { format: SCHEMA, paperboat: await paperboatVersion() });
+        case "GET /api/apps": return send(res, 200, await installedApps().catch(() => []));
+      }
+      const { hub, history, index, sessions, saveSoon, holdSave } = need();
+      const hubInfo = () => ({ ...hub.conf, root: hub.root, shown: tilde(hub.root), place: placeOf(hub.root), conflicts: conflictsIn(hub.root) });
       switch (route) {
         case "GET /api/hub": return send(res, 200, hubInfo());
         case "POST /api/hub/config": { hub.set(String(body.key) as HubKey, String(body.value ?? "")); history.excludes(); saveSoon(); return send(res, 200, hubInfo()); }
         case "GET /api/versions": return send(res, 200, { ok: history.ok, versions: history.versions(url.searchParams.get("path") ?? "") });
         case "POST /api/versions/restore": {
-          clearTimeout(saveTimer);
+          holdSave();
           const id = history.restore(String(body.id), String(body.path ?? ""));
           for (const f of hub.files()) index.update(f);
           return send(res, 200, { id });
         }
-        // About: the hub format and Paperboat's version (null: not installed); never starts paperboatd
-        case "GET /api/about": return send(res, 200, { format: SCHEMA, paperboat: await paperboatVersion() });
-        case "GET /api/hubs": return send(res, 200, infos());
-        case "POST /api/hubs/remove": { forget(String(body.id)); return send(res, 200, {}); }
-        // another hub opens in its own Malachite (paperboat app open): one server per hub
-        case "POST /api/hubs/open": {
-          const h = infos().find((x) => x.id === body.id);
-          if (!h || h.missing) throw new HubError("can't find that hub's folder", 404);
-          return send(res, 200, await openHub(h.path));
-        }
-        case "GET /api/apps": return send(res, 200, await installedApps().catch(() => []));
         // a file another app draws: open it there on this hub (the app works in the hub), or copy it out
         case "POST /api/apps/open": {
           const app = String(body.app), rel = String(body.path), copy = !!body.copy;
@@ -139,16 +216,6 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
           }
           const s = await paperboat(["app", "open", app, folder, "--no-open"]);
           return send(res, 200, { url: `${s.url.replace(/\/?$/, "/")}?open=${encodeURIComponent(open)}`, folder: tilde(folder), file: open });
-        }
-        case "POST /api/hubs/new": {
-          const name = String(body.name ?? "").trim();
-          if (!name || /[\\/"]/.test(name)) throw new HubError("a hub's name has no / \\ or quotes");
-          const dir = defaultFolder(name);
-          if (fs.existsSync(dir)) throw new HubError(`${dir} exists: pick another name`, 409);
-          fs.mkdirSync(dir, { recursive: true });
-          const made = new Hub(dir);
-          remember(made.id, made.root);
-          return send(res, 200, await openHub(made.root));
         }
         case "GET /api/tree": return send(res, 200, hub.tree());
         case "GET /api/index": return send(res, 200, index.list());
@@ -204,8 +271,8 @@ export function serve(hubDir: string, port = DEFAULT_PORT, control = new Control
   });
 
   server.listen(port, "127.0.0.1");
-  server.on("close", () => { watcher.close(); sessions.close(); for (const c of clients) c.end(); });
-  return { server, hub, index, sessions };
+  server.on("close", () => { cur?.close(); cur = null; control.close(); for (const c of clients) c.end(); });
+  return { server, get hub() { return cur?.hub; }, workspace };
 }
 
 const lang = (l: unknown): Lang => { if (l === "julia" || l === "python") return l; throw new HubError("lang is julia or python"); };
@@ -270,11 +337,6 @@ function paperboat(args: string[]): Promise<any> {
   });
 }
 
-/** Opens a hub in its own Malachite; the page goes to the URL it answers. */
-async function openHub(dir: string): Promise<{ url: string }> {
-  return { url: (await paperboat(["app", "open", "malachite", dir, "--no-open"])).url };
-}
-
 /** The apps installed beside Malachite (paperboat app list), asked at most every 10 s. */
 let appsSeen: { at: number; list: { name: string; label: string }[] } | undefined;
 async function installedApps() {
@@ -318,13 +380,13 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(proces
   const pi = args.indexOf("--port");
   const port = pi >= 0 ? Number(args.splice(pi, 2)[1]) : Number(process.env.MALACHITE_PORT ?? DEFAULT_PORT);
   const dir = args[0];
-  if (!dir || args.includes("--help") || args.includes("-h")) {
-    console.log("usage: malachite <hub folder> [--port N]\n  Opens the folder as a hub (.malachite/hub.toml on first open) and serves it on 127.0.0.1.\n       malachite hub …  the hubs this machine knows (paperboat hub …)");
-    process.exit(dir ? 0 : 2);
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log("usage: malachite [<hub folder>] [--port N]\n  Serves Malachite on 127.0.0.1, in the hub (a plain folder becomes one: .malachite/hub.toml), or on the Start page.\n       malachite hub …  the hubs this machine knows (paperboat hub …)");
+    process.exit(0);
   }
-  fs.mkdirSync(dir, { recursive: true });
-  const { server, hub } = serve(dir, port);
-  server.on("listening", () => console.log(`Malachite: ${hub.name} (${hub.root}) on http://127.0.0.1:${port}/`));
+  if (dir) fs.mkdirSync(dir, { recursive: true });
+  const { server, hub } = serve(dir ?? null, port);
+  server.on("listening", () => console.log(`Malachite: ${hub ? `${hub.name} (${hub.root})` : "no hub"} on http://127.0.0.1:${port}/`));
   server.on("error", (e) => { console.error(`malachite: ${e.message}`); process.exit(1); });
   for (const s of ["SIGINT", "SIGTERM"]) process.on(s, () => { server.close(); process.exit(0); });
 }
