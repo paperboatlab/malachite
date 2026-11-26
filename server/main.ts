@@ -162,7 +162,6 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
         case "POST /api/hubs/remove": { forget(String(body.id)); return send(res, 200, {}); }
         case "POST /api/hubs/new": {   // New hub…: in ~/Documents/paperboat/<name>, and Malachite works in it
           const name = String(body.name ?? "").trim();
-          if (!name || /[\\/"]/.test(name)) throw new HubError("a hub's name has no / \\ or quotes");
           const dir = defaultFolder(name);
           if (fs.existsSync(dir)) throw new HubError(`${dir} exists: pick another name`, 409);
           fs.mkdirSync(dir, { recursive: true });
