@@ -3,10 +3,10 @@
 // slim bars. The parts are the kit's (@paperboatlab/ui): the file tree, the editor and its languages, the
 // plot, the canvas layout; Malachite brings the hub, its notes and cells. Files are the record.
 import {
-  About, AppMark, Dialog, Icon, Key, Menu, Notifications, Panel, PanelsKey, Rail, Search, Segmented, ThemePicker, Toasts, chordMatches, readStored, typing, useTheme, useToasts, writeStored,
+  About, AppMark, Dialog, Key, Menu, Notifications, Panel, PanelsKey, Rail, Search, Segmented, ThemePicker, Toasts, chordMatches, readStored, typing, useTheme, useToasts, writeStored,
   type Credit, type MenuEntry, type SearchItem, type Theme,
 } from "@paperboatlab/ui";
-import { DEFAULT_EDITOR_SETTINGS, Editor, TabMenu, afterClose, languageFor, livePreview, markdown, orderTabs, tabMenu, type Session } from "@paperboatlab/ui/editor";
+import { DEFAULT_EDITOR_SETTINGS, Editor, EditorTabs, afterClose, languageFor, livePreview, markdown, orderTabs, tabMenu, type Session } from "@paperboatlab/ui/editor";
 import { EditorView } from "@codemirror/view";
 import { FileTree, type FileEntry } from "@paperboatlab/ui/files";
 import { HubSelector, HubSettings, type Hub as KitHub } from "@paperboatlab/ui/hub";
@@ -20,7 +20,7 @@ import { FileGlyph, OWNER, TEXT, mediaOf, typeOf } from "./files.tsx";
 import { MediaEmbed } from "./Media.tsx";
 import { CellView, PropsEditor, ReadView, type CodeLook } from "./Note.tsx";
 import { valuesIn } from "./views.ts";
-import { Ev, LinksCard, RuntimesKey } from "./Side.tsx";
+import { Ev, LinksCard, Runtimes } from "./Side.tsx";
 import { HubGraph, hubLinks } from "./Graph.tsx";
 import { ViewsPage } from "./Views.tsx";
 import { TrashList } from "./Trash.tsx";
@@ -82,7 +82,6 @@ export function App() {
   const [tabs, setTabs] = useState<string[]>(() => readStored("malachite.tabs", isList) ?? []);
   const [current, setCurrent] = useState<string | null>(() => readStored("malachite.tab", isStr) ?? readStored("malachite.tabs", isList)?.[0] ?? null);
   const [pinned, setPinned] = useState<ReadonlySet<string>>(() => new Set(readStored("malachite.pinned", isList) ?? []));
-  const [tabAt, setTabAt] = useState<{ path: string; x: number; y: number } | null>(null);   // the tab whose menu is open
   const [revealed, setRevealed] = useState<string | null>(null);   // Reveal in Files: the row the tree shows
   const [note, setNote] = useState<NoteData | null>(null);
   const [plain, setPlain] = useState<string | null>(null);   // a text file that isn't a note
@@ -417,15 +416,14 @@ export function App() {
   return (
     <div className="win">
       <header className="bar">
-        <AppMark app="malachite" size={26} idle label="Malachite" />
-        <span className="wm">Malachite</span>
+        <span className="lk"><AppMark app="malachite" size={26} idle label="Malachite" /><span className="wm">Malachite</span></span>
         {hub && <HubSelector app="Malachite" hub={kitHub({ ...hub, shown: hub.shown })} hubs={hubs.map(kitHub)}
           onSwitch={(id) => api.hubOpen(id).then((r) => window.open(r.url, "_blank"), fail)}
           onNew={() => setAsk({ title: "New hub", label: "Name", ok: "Create", note: "It goes in ~/Documents/paperboat and opens in a new window.",
             run: (n) => n.trim() && api.hubNew(n.trim()).then((r) => { api.hubs().then(setHubs); window.open(r.url, "_blank"); }, fail) })} />}
         <span className="bend">
           {page === "notes" && <Key kind="primary" icon="new-file" onClick={() => newNote()}>New note</Key>}
-          <RuntimesKey running={nRunning} version={peekVersion} />
+          <Runtimes running={nRunning} version={peekVersion} />
           {page === "notes" && <PanelsKey layout={LAYOUT} onToggle={(id) => (id === "l" ? setHideL : setHideR)((h) => !h)}
             panels={[{ id: "l", label: "Files", keys: "Ctrl B", shown: !hideL }, { id: "r", label: "Links", keys: "Ctrl Alt B", shown: !hideR }]} />}
           <span className="lsep" />
@@ -444,10 +442,10 @@ export function App() {
         {page === "notes" && (
           <div className="notes-page">
             <Panel name={trashOpen ? "Trash" : hub?.name ?? "Hub"} count={trashOpen ? undefined : `${items.length}`} side="left" hidden={hideL} onHidden={setHideL} icon="a-notes" width={262}
-              head={<span className="tools">
+              tools={<>
                 {!trashOpen && <><Key size="sm" kind="quiet" round icon="new-file" label="New note (Ctrl N)" onClick={() => newNote("")} /><Key size="sm" kind="quiet" round icon="new-folder" label="New folder" onClick={() => actions.newFolder("")} /></>}
                 <Key size="sm" kind="quiet" round icon="trash" label={trashOpen ? "Back to the hub" : "Trash"} aria-pressed={trashOpen} onClick={() => setTrashOpen((o) => !o)} />
-              </span>}>
+              </>}>
               {trashOpen ? <TrashList version={trashVersion} fail={fail}
                 confirm={(title, note, ok, run) => setAsk({ title, note, danger: true, ok, run })}
                 onRestored={(p, was) => { reload(); if (p !== was) show({ title: "Restored under a new name", detail: `${was} as ${p}: its name was taken`, state: "done" }); }} />
@@ -460,25 +458,13 @@ export function App() {
             </Panel>
 
             <section className="panel note" aria-label="Note">
-              <div className="ntabs">
-                <div className="tabs2" role="tablist">
-                  {strip.map((p) => (
-                    <span key={p} role="tab" aria-selected={p === current} className={`${p === current ? "on" : ""}${tabAt?.path === p ? " ctx" : ""}`} title={p}
-                      onClick={() => open(p)} onAuxClick={(e) => e.button === 1 && closeTabs([p])}
-                      onContextMenu={(e) => { e.preventDefault(); setTabAt({ path: p, x: e.clientX, y: e.clientY }); }}>
-                      <FileGlyph path={p} size={14} />{nameOf(p).replace(/\.md$/, "")}
-                      {pinned.has(p)
-                        ? <span className="tpin" aria-label="Pinned"><Icon name="pin" size={12} /></span>
-                        : <button type="button" className="tx" aria-label={`Close ${p}`} onClick={(e) => { e.stopPropagation(); closeTabs([p]); }}>×</button>}
-                    </span>
-                  ))}
-                </div>
-                {tabAt && <TabMenu path={tabAt.path} x={tabAt.x} y={tabAt.y} items={tabItems(tabAt.path)} onClose={() => setTabAt(null)} />}
-              </div>
+              <EditorTabs label="Open notes" current={current} onShow={(p) => open(p)} onClose={(p) => closeTabs([p])} menu={tabItems}
+                onUnpin={(p) => setPinned((s) => new Set([...s].filter((x) => x !== p)))}
+                tabs={strip.map((p) => ({ id: p, label: nameOf(p).replace(/\.md$/, ""), pinned: pinned.has(p), dirty: p === current && draft !== null }))} />
               {current && (
                 <div className="crumb">
                   <span>{hub?.name} / {current.split("/").slice(0, -1).map((d) => `${d} / `).join("")}<b>{nameOf(current)}</b></span>
-                  <span className="bend">
+                  <span className="row-end">
                     {(note || plain !== null) && <span>{draft !== null ? "saving…" : note?.sealed ? "sealed" : "saved"}</span>}
                     {note && !note.sealed && <Key size="sm" icon="lock" onClick={() => actions.seal(note.path)} title="Seal: freeze the body and record its hash">Seal…</Key>}
                   </span>

@@ -68,9 +68,10 @@ flowchart LR
   for the kit's tree), `Graph.tsx` (the hub graph and the local graph, the kit's note graph), `Trash.tsx` (the hub card's trash), `Media.tsx` (pictures, videos, sounds: the kit's player and image
   editor; Read draws them into `.media-slot`s, Live through the kit's `embeds`), `Views.tsx` and `views.ts`
   (board, list, timeline over `views/*.toml`), `Side.tsx` (the Links card, the
-  runtimes key and its peek), `markdown.ts` (marked with wikilinks and embeds), `files.tsx`, `api.ts`.
-- **From the kit** (`@paperboatlab/ui`): the shell's parts (Rail, Panel, PanelsKey, Search, Menu, Dialog,
-  ThemePicker, Toasts, Notifications), the file tree (`/files`), the editor with its languages and themes (`/editor`:
+  rows for the kit's runtimes key from `GET /api/runtimes`), `markdown.ts` (marked with wikilinks and embeds), `files.tsx`, `api.ts`.
+- **From the kit** (`@paperboatlab/ui`): the shell's parts (the bar `.win > .bar`, Rail, Panel, PanelsKey, Search,
+  Menu, Dialog, ThemePicker, Toasts, Notifications, RuntimesKey), the file tree (`/files`), the editor with its
+  languages, themes and tab strip (`/editor`, `EditorTabs`:
   notes as Markdown, cells read-only, code files linted and completed by the hub's session through
   `POST /api/ask`), the plot (`/plot`), the graph layout (`/canvas`, drawn with React Flow). Malachite
   draws none of these itself.

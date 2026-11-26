@@ -23,7 +23,7 @@ export function TrashList({ version, confirm, onRestored, fail }: { version: num
   if (!list) return null;
   return (
     <div className="trash">
-      {list.length === 0 && <p className="none">The trash is empty. A file or folder moved to the trash waits here until you delete it for good.</p>}
+      {list.length === 0 && <p className="empty-state">The trash is empty. A file or folder moved to the trash waits here until you delete it for good.</p>}
       {list.map((t) => (
         <div key={t.id} className="trow">
           <FileGlyph path={t.path} dir={t.kind === "folder"} />
