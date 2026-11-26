@@ -5,14 +5,16 @@
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--surface-ground); color: var(--text); font: var(--size-sm)/1.45 var(--font-sans); }
 
-/* the window: the kit's bar (.win > .bar) on top, the rail at the left, the page */
-.win { height: 100%; box-sizing: border-box; display: grid; grid-template-columns: auto 1fr; grid-template-rows: var(--bar-height) 1fr; gap: var(--gutter); padding: var(--gutter); }
+/* the window, the kit's frame: the bar on top, the rail at the left and the side panels are one surface
+   wrapped round the work, which sits in the kit's bay (REBRAND "Frame") */
+.win { height: 100%; box-sizing: border-box; display: grid; grid-template-columns: auto 1fr; grid-template-rows: var(--bar-height) 1fr; padding: 0 var(--gutter) var(--gutter) 0; }
 .win > .bar { grid-column: 1 / -1; }
 /* the keys at a row's right end (the path line, a cell's head, the Views bar) */
 .row-end { margin-left: auto; display: flex; align-items: center; gap: var(--space-2); }
 .pages { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
-.pages > .panel { flex: 1; }
-.notes-page { flex: 1; min-height: 0; display: flex; gap: var(--gutter); }
+.pages > .bay, .notes-page > .bay { flex: 1; display: flex; flex-direction: column; }
+.bay > .panel { flex: 1; }
+.notes-page { flex: 1; min-height: 0; display: flex; }
 .empty { flex: 1; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--text-muted); text-align: center; padding: 24px; }
 
 /* the note card: the kit's EditorTabs, the path, the body, the foot */
