@@ -1,20 +1,24 @@
-// Malachite's page (agent-docs/rebrand/apps/malachite): the bar, the rail (Notes, Views, Graph, Log; the
-// foot Search, Settings, Help), and on Notes the hub's files, the note and its Links as cards that hide to
-// slim bars. The parts are the kit's (@paperboatlab/ui): the file tree, the editor and its languages, the
-// plot, the canvas layout; Malachite brings the hub, its notes and cells. Files are the record.
+// Malachite's page (agent-docs/rebrand/apps/malachite): the bar (the menu bar, the hub's workspace well, the
+// keys, the window keys), the rail (Notes, Views, Graph, Log; the foot Search, Settings, Help), and on Notes the
+// hub's files, the note and its Links as cards that hide to slim bars. With no hub open, the Start page (the
+// one file workflow, agent-docs/rebrand/apps/files: Malachite works in hubs only). The parts are the kit's
+// (@paperboatlab/ui): the menus and the command registry, the workspace parts, the file tree, the editor and
+// its languages, the plot, the canvas layout; Malachite brings the hub, its notes and cells. Files are the record.
 import {
-  About, AppMark, Dialog, Key, Menu, Notifications, Panel, PanelsKey, Rail, Search, Segmented, ThemePicker, Toasts, chordMatches, readStored, typing, useTheme, useToasts, writeStored,
-  type Credit, type MenuEntry, type SearchItem, type Theme,
+  About, AppMark, Dialog, Key, Menu, MenuBar, Notifications, Panel, PanelsKey, Rail, Search, Segmented, THEMES, ThemePicker, Toasts, WindowKeys, isEnabled, readStored, useShortcuts, useTheme, useToasts, writeStored,
+  type Command, type CommandMenu, type Credit, type MenuEntry, type SearchItem, type Theme,
 } from "@paperboatlab/ui";
 import { DEFAULT_EDITOR_SETTINGS, Editor, EditorTabs, afterClose, languageFor, livePreview, markdown, orderTabs, tabMenu, type Session } from "@paperboatlab/ui/editor";
 import { EditorView } from "@codemirror/view";
 import { FileTree, type FileEntry } from "@paperboatlab/ui/files";
-import { HubSelector, HubSettings, type Hub as KitHub } from "@paperboatlab/ui/hub";
+import { ConnectHub, HubSettings, OpenFile, SaveFile, type Hub as KitHub } from "@paperboatlab/ui/hub";
+import { NotAHub, Start, TypedPath, Unsaved, WorkspaceWell, fileMenu as fileCommands, recentFor, recentMenu, shell, type RecentEntry } from "@paperboatlab/ui/workspace";
+import { redo, undo } from "@codemirror/commands";
 import { Plot2D, type PlotSeries } from "@paperboatlab/ui/plot";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { patch, split } from "../server/frontmatter.ts";
-import { api, listen, type Cell, type HubConf, type KnownHub, type Place, type Entry, type Item, type Lang, type Links, type LogEvent, type NoteData, type Props, type Run } from "./api.ts";
+import { join, patch, split } from "../server/frontmatter.ts";
+import { api, listen, type Cell, type Entered, type HubConf, type KnownHub, type Place, type Workspace, type Entry, type Item, type Lang, type Links, type LogEvent, type NoteData, type Props, type Run } from "./api.ts";
 import { fileMenu, type FileActions } from "./fileMenu.ts";
 import { FileGlyph, OWNER, TEXT, mediaOf, typeOf } from "./files.tsx";
 import { MediaEmbed } from "./Media.tsx";
@@ -68,6 +72,12 @@ export function App() {
   const [theme, setTheme] = useState<Theme>(() => readStored("paperboat.theme", isTheme) ?? "system");
   const shown = useTheme(theme);
   const look: CodeLook = useMemo(() => ({ settings: { ...DEFAULT_EDITOR_SETTINGS, wrap: true }, appTheme: shown }), [shown]);
+  const [ws, setWs] = useState<Workspace | null | undefined>(undefined);   // undefined: not asked yet; null: the Start page
+  const [home, setHome] = useState<string>();
+  const [recent, setRecent] = useState<RecentEntry[]>([]);   // $PAPERBOAT_HOME/recent.json, every app's
+  const [dlg, setDlg] = useState<"" | "connect" | "open" | "save" | "folder" | "file">("");
+  const [notHub, setNotHub] = useState<{ name: string; path: string } | null>(null);
+  const [unsaved, setUnsaved] = useState<{ closing?: string; then: () => void } | null>(null);
   const [hub, setHub] = useState<HubConf | null>(null);
   const [hubs, setHubs] = useState<KnownHub[]>([]);
   const [settings, setSettings] = useState(false);
@@ -79,9 +89,10 @@ export function App() {
   const [wide, setWide] = useState(() => readStored("malachite.rail.wide", isBool) ?? false);
   const [hideL, setHideL] = useState(false), [hideR, setHideR] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false), [trashVersion, setTrashVersion] = useState(0);
-  const [tabs, setTabs] = useState<string[]>(() => readStored("malachite.tabs", isList) ?? []);
-  const [current, setCurrent] = useState<string | null>(() => readStored("malachite.tab", isStr) ?? readStored("malachite.tabs", isList)?.[0] ?? null);
-  const [pinned, setPinned] = useState<ReadonlySet<string>>(() => new Set(readStored("malachite.pinned", isList) ?? []));
+  // the open tabs, kept per hub (read when the hub opens)
+  const [tabs, setTabs] = useState<string[]>([]);
+  const [current, setCurrent] = useState<string | null>(null);
+  const [pinned, setPinned] = useState<ReadonlySet<string>>(new Set());
   const [revealed, setRevealed] = useState<string | null>(null);   // Reveal in Files: the row the tree shows
   const [note, setNote] = useState<NoteData | null>(null);
   const [plain, setPlain] = useState<string | null>(null);   // a text file that isn't a note
@@ -106,17 +117,43 @@ export function App() {
   const sessionNote = useRef<Partial<Record<Lang, number>>>({});
   const saveNote = useRef<number | undefined>(undefined);   // a failed save's toast; the next save that works ends it
 
+  const wsId = ws?.hub ?? null;
+  const wsRef = useRef(wsId);
+  wsRef.current = wsId;
+  // the theme every app starts in ($PAPERBOAT_HOME/settings.json); this browser's copy draws the first frame
   useEffect(() => writeStored("paperboat.theme", theme), [theme]);
+  const changeTheme = (t: Theme) => { setTheme(t); api.setTheme(t).catch(fail); };
   useEffect(() => writeStored("malachite.rail.wide", wide), [wide]);
-  useEffect(() => writeStored("malachite.tabs", tabs), [tabs]);
-  useEffect(() => writeStored("malachite.tab", current), [current]);
-  useEffect(() => writeStored("malachite.pinned", [...pinned]), [pinned]);
+  useEffect(() => { if (wsId) writeStored(`malachite.tabs:${wsId}`, tabs); }, [tabs]);
+  useEffect(() => { if (wsId) writeStored(`malachite.tab:${wsId}`, current); }, [current]);
+  useEffect(() => { if (wsId) writeStored(`malachite.pinned:${wsId}`, [...pinned]); }, [pinned]);
   const strip = useMemo(() => orderTabs(tabs, pinned), [tabs, pinned]);
 
   const reload = useCallback(() => { api.tree().then(setTree, fail); api.index().then(setItems, fail); }, [fail]);
+  const loadRecent = useCallback(() => api.recent().then((r) => setRecent(r.recent), () => {}), []);
+  const loadWs = useCallback(() => api.workspace().then((r) => { setWs(r.workspace); setHome(r.home); }, fail), [fail]);
+  useEffect(() => {
+    loadWs();
+    api.settings().then((v) => setTheme(v.theme), () => {});
+    api.apps().then(setApps, () => setApps([]));
+  }, [loadWs]);
+  // a file to open once its hub is open: a deep link (/?open=<path in the hub>&mode=edit), a file opened from outside
+  const pending = useRef<{ path: string; mode: Mode } | null>((() => {
+    const u = new URLSearchParams(location.search), p = u.get("open"), m = u.get("mode");
+    return p ? { path: p, mode: m === "edit" || m === "read" ? m : "live" } : null;
+  })());
+  // a hub opens: its tabs, its files, its settings; none: the Start page
   useEffect(() => {
     api.hubs().then(setHubs, () => setHubs([]));
-    api.apps().then(setApps, () => setApps([]));
+    loadRecent();
+    setTabs(wsId ? readStored(`malachite.tabs:${wsId}`, isList) ?? [] : []);
+    setCurrent(wsId ? readStored(`malachite.tab:${wsId}`, isStr) ?? null : null);
+    setPinned(new Set(wsId ? readStored(`malachite.pinned:${wsId}`, isList) ?? [] : []));
+    setDraft(null); setLog([]); setRuns({}); setTrashOpen(false);
+    if (!wsId) { setHub(null); setTree([]); setItems([]); document.title = "Malachite"; return; }
+    const go = pending.current;
+    pending.current = null;
+    if (go) open(go.path, false, go.mode);
     api.hub().then((v) => {
       setHub(v); document.title = `${v.name} · Malachite`;
       if (v.conflicts.length) show({ title: `${v.conflicts.length === 1 ? "A conflict copy" : `${v.conflicts.length} conflict copies`} in ${v.name}`, state: "failed",
@@ -124,7 +161,7 @@ export function App() {
     },
       (e) => show({ title: "Couldn't open the hub", detail: `${(e as Error).message ?? e} · the terminal running malachite says why`, state: "failed" }));
     reload();
-  }, [reload, fail, show]);
+  }, [wsId]);
 
   const load = useCallback((p: string | null) => {
     if (!p) { setNote(null); setPlain(null); setLinks(null); return; }
@@ -140,9 +177,10 @@ export function App() {
   }, [fail]);
   useEffect(() => { setRuns({}); load(current); }, [current, load]);
 
-  // live: files (anyone's changes), cells, sessions and the log
+  // live: the hub (switched here or in another tab), files (anyone's changes), cells, sessions and the log
   useEffect(() => listen((e) => {
-    if (e.type === "files") {
+    if (e.type === "workspace") loadWs();
+    else if (e.type === "files") {
       reload();
       const c = currentRef.current;
       if (c && (e.changed as string[]).some((f) => f === c)) setDraft((d) => { if (d === null) load(c); return d; });
@@ -165,16 +203,16 @@ export function App() {
       const c = currentRef.current;
       if (c && typeOf(c) === "md") api.links(c).then((l) => currentRef.current === c && setLinks(l), () => {});
     }
-  }), [reload, load, show]);
+  }), [reload, load, show, loadWs]);
   useEffect(() => { if (page === "log") api.log().then(setLog, fail); }, [page, fail]);
 
   /** Opens a file in a tab (to the side: behind the current one); a note opens in Read unless asked. */
   const open = useCallback((p: string, side = false, view: Mode = "live") => {
     setPage("notes");
-    if (!side) setMode(view);
+    if (!side) { setMode(view); api.opened(p).then(loadRecent, () => {}); }   // Open recent's files
     setTabs((t) => (t.includes(p) ? t : side ? [...t, p] : [p, ...t].slice(0, 12)));
     if (!side) setCurrent(p);
-  }, []);
+  }, [loadRecent]);
   /** Closes tabs (kit tabs.ts): what is typed in the shown one is saved first; its neighbour shows. */
   const closeTabs = (paths: string[]) => {
     if (current && paths.includes(current)) flush.current();
@@ -183,13 +221,10 @@ export function App() {
     setCurrent(next.current);
     setPinned((s) => new Set([...s].filter((t) => !paths.includes(t))));
   };
-  // a deep link opens a file: /?open=<path in the hub>&mode=edit (the Launcher and other apps use it)
   useEffect(() => {
-    const u = new URLSearchParams(location.search), p = u.get("open");
-    const m = u.get("mode");
-    if (p) open(p, false, m === "edit" || m === "read" ? m : "live");
-    const pg = u.get("page"); if (pg === "graph" || pg === "views" || pg === "log") setPage(pg);
-  }, [open]);
+    const pg = new URLSearchParams(location.search).get("page");
+    if (pg === "graph" || pg === "views" || pg === "log") setPage(pg);
+  }, []);
 
   const resolve = useMemo(() => {
     const byName = new Map<string, string>();
@@ -212,13 +247,12 @@ export function App() {
   }, [show]);
   // save what is typed after a pause (and on Ctrl+S); the file is the record
   useEffect(() => {
-    if (draft === null || !current) return;
+    if (draft === null || !current || unsaved) return;   // asking Save or Don't save: it waits for the answer
     const t = setTimeout(() => save(current, draft), 700);
     return () => clearTimeout(t);
-  }, [draft, current, save]);
-  const flush = useRef(() => {});
-  flush.current = () => { if (draft !== null && current) save(current, draft); };
-  const saveKeys = useMemo(() => [{ key: "Mod-s", preventDefault: true, run: () => { flush.current(); return true; } }], []);
+  }, [draft, current, save, unsaved]);
+  const flush = useRef(async () => {});
+  flush.current = async () => { if (draft !== null && current) await save(current, draft); };
 
   const newNote = useCallback((dir = current ? dirOf(current) : "") => setAsk({
     title: "New note", label: "Title", ok: "Create",
@@ -259,12 +293,12 @@ export function App() {
   useEffect(() => { if (revealed) document.querySelector(`.file-row[title="${CSS.escape(revealed)}"]`)?.scrollIntoView({ block: "nearest" }); }, [revealed]);
 
   // the hub's files as the kit's tree rows
-  const entries = useMemo(() => {
-    const out: FileEntry[] = [];
+  const [entries, sizes] = useMemo(() => {
+    const out: FileEntry[] = [], sizes = new Map<string, number>();
     const conflict = new Set(hub?.conflicts ?? []);   // a sync client's copy: marked so it gets looked at
-    const walk = (es: Entry[], depth: number) => { for (const e of es) { out.push({ path: e.path, name: e.name, depth, kind: e.kind === "dir" ? "folder" : "file", ...(conflict.has(e.path) ? { badge: "conflict" } : {}) }); if (e.children) walk(e.children, depth + 1); } };
+    const walk = (es: Entry[], depth: number) => { for (const e of es) { if (e.size !== undefined) sizes.set(e.path, e.size); out.push({ path: e.path, name: e.name, depth, kind: e.kind === "dir" ? "folder" : "file", ...(conflict.has(e.path) ? { badge: "conflict" } : {}) }); if (e.children) walk(e.children, depth + 1); } };
     walk(tree, 0);
-    return out;
+    return [out, sizes] as const;
   }, [tree, hub?.conflicts]);
 
   const runCell = (c: Cell) => { if (current) api.run(current, c.hash).then((r) => setRuns((m) => ({ ...m, [c.hash]: r })), fail); };
@@ -376,72 +410,145 @@ export function App() {
     { id: "py", label: "Insert Python cell", icon: "add", disabled: !!note?.sealed, why: "It is sealed", run: () => insertCell("python", at) },
   ];
 
-  // keys: Ctrl K search, Ctrl B / Ctrl Alt B the side cards, Alt 1–4 the pages (the Rail), Ctrl N a note
-  useEffect(() => {
-    const on = (e: KeyboardEvent) => {
-      if (chordMatches({ key: "k", ctrl: true }, e)) { e.preventDefault(); setSearch((s) => !s); return; }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") { e.preventDefault(); (e.altKey ? setHideR : setHideL)((h) => !h); return; }
-      if (typing(e.target)) return;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") { e.preventDefault(); newNote(); }
-    };
-    addEventListener("keydown", on);
-    return () => removeEventListener("keydown", on);
-  }, [newNote]);
-
   // About asks the server for the hub format and Paperboat's version as it opens
   const openAbout = () => { setAbout({}); api.about().then((r) => setAbout((a) => a && r), () => {}); };
 
-  const searchItems: SearchItem[] = useMemo(() => [
+  // ── the one file workflow (plans/2026-11-26_11-05_one_file_workflow.md): Malachite works in hubs only ──
+  /** A hub opened (or none): its file, when one was asked for, opens in it. */
+  const enter = (r: Entered) => {
+    // the hub may be open here already (this hub, or the server's event came first): then the file opens now
+    if (r.open) { if ((r.workspace?.hub ?? null) === wsRef.current) open(r.open); else pending.current = { path: r.open, mode: "live" }; }
+    setWs(r.workspace);
+    setDlg("");
+    loadRecent();
+  };
+  /** A folder or a file by its path: its hub opens; a plain folder asks to become one (NotAHub). */
+  const openPath = (p: string, make = false) => {
+    flush.current();
+    api.enter({ path: p, make }).then(enter, (e) => {
+      const nh = (e as { body?: { notHub?: { name: string; path: string } } }).body?.notHub;
+      if (nh) { setDlg(""); setNotHub(nh); } else fail(e);
+    });
+  };
+  /** What is typed and not yet saved asks first (Save, Don't save, Cancel), then `then` runs. */
+  const guard = (closing: string | undefined, then: () => void) => {
+    if (draft !== null && current) setUnsaved({ closing, then }); else then();
+  };
+  const switchHub = (id: string) => guard("the hub", () => api.enter({ id }).then(enter, fail));
+  const closeHub = () => guard("the hub", () => api.enter({}).then(enter, fail));
+  const closeFile = () => current && guard(undefined, () => { setDraft(null); closeTabs([current]); });
+  const newHub = () => setAsk({ title: "New hub", label: "Name", ok: "Create", note: "It goes in ~/Documents/paperboat, and Malachite works in it.",
+    run: (n) => guard("the hub", () => api.hubNew(n).then(enter, fail)) });
+  // the system's dialogs in a Paperboat window; in a browser, the path typed
+  const openFolder = () => { const sh = shell(); if (sh) sh.pickFolder("Open a hub or a folder").then((p) => p && openPath(p), fail); else setDlg("folder"); };
+  const openFile = () => {
+    if (ws) return setDlg("open");   // in a hub: our picker over it
+    const sh = shell();
+    if (sh) sh.pickFile(["md"], "Open a note").then((p) => p && openPath(p), fail); else setDlg("file");
+  };
+  const onRecent = (e: RecentEntry) => (e.kind === "hub" && e.hub && hubs.some((h) => h.id === e.hub && !h.missing) ? switchHub(e.hub) : openPath(e.path));
+  const recentItems = recentMenu(recentFor({ version: 1, recent }, "malachite", { folders: false }), onRecent, () => { api.clearRecent().then(loadRecent, fail); });
+  /** Save as…: the text into a new file in the hub (a note gets a new id: it is another note), then that file shows. */
+  const saveAs = (to: string) => {
+    if (!current) return;
+    let text = draft ?? note?.text ?? plain ?? "";
+    if (typeOf(current) === "md") { const { props, body } = split(text); for (const k of ["id", "sealed", "sealed_by", "hash"]) delete props[k]; text = join(props, body); }
+    setDlg("");
+    api.save(to, text).then(() => { setDraft(null); reload(); open(to); }, fail);
+  };
+
+  // ── the commands: the menu bar, the command search (Ctrl K) and the shortcuts read this one list ──
+  const MENUS: CommandMenu[] = [{ id: "file", label: "File" }, { id: "edit", label: "Edit" }, { id: "view", label: "View" }, { id: "note", label: "Note" }, { id: "help", label: "Help" }];
+  const noHub = ws ? {} : { enabled: false, why: "no hub open" };
+  const needNote = (more = true) => (note && more ? {} : { enabled: false, why: note ? "not here" : "open a note first" });
+  const editing = () => !!note && !note.sealed && mode !== "read" && !!liveView.current;
+  const commands: Command[] = [
+    ...fileCommands({
+      noun: "note", workspace: ws ?? null, file: !!ws && !!current, hubs: true, hubOnly: true, recent: recentItems,
+      onNew: () => (ws ? newNote() : setDlg("connect")), onOpenFile: openFile, onOpenFolder: openFolder, onConnect: () => setDlg("connect"),
+      onSave: () => { flush.current(); }, onSaveAs: () => setDlg("save"), onCloseFile: closeFile, onCloseWorkspace: closeHub, onSettings: () => setSettings(true),
+    }),
+    { id: "edit.undo", label: "Undo", menu: "edit", group: "undo", shortcut: "Ctrl Z", enabled: editing, why: "nothing to undo here", run: () => { const v = liveView.current; if (v) undo(v); } },
+    { id: "edit.redo", label: "Redo", menu: "edit", group: "undo", shortcut: "Ctrl Shift Z", enabled: editing, why: "nothing to redo here", run: () => { const v = liveView.current; if (v) redo(v); } },
+    { id: "edit.rename", label: "Rename…", menu: "edit", group: "file", ...(current ? {} : { enabled: false, why: "no file open" }), run: () => current && actions.rename(current) },
+    { id: "edit.link", label: "Copy link", menu: "edit", group: "file", ...(current ? {} : { enabled: false, why: "no file open" }), run: () => current && actions.copy(`[[${nameOf(current).replace(/\.md$/, "")}]]`, "Link") },
+    { id: "edit.path", label: "Copy path", menu: "edit", group: "file", ...(current ? {} : { enabled: false, why: "no file open" }), run: () => current && actions.copy(current, "Path") },
+    { id: "edit.trash", label: "Move to trash", menu: "edit", group: "file", ...(current ? {} : { enabled: false, why: "no file open" }), run: () => current && actions.trash(current) },
+    { id: "edit.search", label: `Search ${hub?.name ?? "the hub"}…`, menu: "edit", group: "find", shortcut: "Ctrl K", chord: { key: "k", ctrl: true }, quiet: true, ...noHub, run: () => setSearch((o) => !o) },
+    ...(["notes", "views", "graph", "log"] as Page[]).map((p, i): Command => ({ id: `view.${p}`, label: `${p[0].toUpperCase()}${p.slice(1)}`, menu: "view", group: "pages", shortcut: `Alt ${i + 1}`, checked: !!ws && page === p, ...noHub, run: () => setPage(p) })),
+    { id: "view.files", label: "Files", menu: "view", group: "panels", shortcut: "Ctrl B", chord: { key: "b", ctrl: true }, checked: !!ws && !hideL, ...noHub, run: () => setHideL((h) => !h) },
+    { id: "view.links", label: "Links", menu: "view", group: "panels", shortcut: "Ctrl Alt B", chord: { key: "b", ctrl: true, alt: true }, checked: !!ws && !hideR, ...noHub, run: () => setHideR((h) => !h) },
+    ...(["read", "live", "edit"] as Mode[]).map((m): Command => ({ id: `view.${m}`, label: m === "edit" ? "Edit the Markdown" : m[0].toUpperCase() + m.slice(1), menu: "view", group: "mode", checked: !!note && mode === m, ...needNote(), run: () => setMode(m) })),
+    { id: "view.theme", label: "Theme", menu: "view", group: "theme", quiet: true, run: () => {},
+      sub: THEMES.map((t): MenuEntry => ({ id: `theme.${t}`, label: t[0].toUpperCase() + t.slice(1), checked: theme === t, run: () => changeTheme(t) })) },
+    ...noteMenu().flatMap((m): Command[] => (typeof m === "object" && "run" in m ? [{ id: `note.${m.id}`, label: m.label, menu: "note", group: "cells", ...needNote(mode !== "read" && !m.disabled), run: m.run }] : [])),
+    { id: "note.seal", label: "Seal…", icon: "lock", menu: "note", group: "note", ...needNote(!note?.sealed), run: () => note && actions.seal(note.path) },
+    { id: "note.graph", label: "Show in graph", menu: "note", group: "note", ...needNote(), run: () => note && actions.graph(note.path) },
+    { id: "note.jl", label: "Restart the Julia session", menu: "note", group: "sessions", ...noHub, run: () => { api.restart("julia").catch(fail); } },
+    { id: "note.py", label: "Restart the Python session", menu: "note", group: "sessions", ...noHub, run: () => { api.restart("python").catch(fail); } },
+    { id: "note.trash", label: "Show the trash", menu: "note", group: "trash", ...noHub, run: () => { setPage("notes"); setHideL(false); setTrashOpen(true); } },
+    { id: "note.empty", label: "Empty the trash…", menu: "note", group: "trash", ...noHub,
+      run: () => setAsk({ title: "Empty the trash?", note: "Everything in it leaves the hub for good; it can't be restored.", danger: true, ok: "Empty trash", run: () => api.emptyTrash().then(() => setTrashVersion((n) => n + 1), fail) }) },
+    { id: "help.docs", label: "Malachite docs", menu: "help", group: "docs", icon: "link-external", run: () => { window.open("https://paperboatlab.org/apps/malachite/", "_blank", "noopener"); } },
+    { id: "help.issue", label: "Report an issue…", menu: "help", group: "docs", icon: "link-external", run: () => { window.open("https://github.com/paperboatlab/malachite/issues/new", "_blank", "noopener"); } },
+    { id: "help.about", label: "About Malachite", menu: "help", group: "about", run: () => openAbout() },
+  ];
+  useShortcuts(commands);
+  const searchItems: SearchItem[] = [
     ...items.filter((i) => i.type === "md").map((i): SearchItem => ({ id: `n:${i.path}`, label: i.title, detail: i.path, group: "Notes", scope: "Notes", icon: "markdown", run: () => open(i.path) })),
     ...items.filter((i) => i.type !== "md").map((i): SearchItem => ({ id: `f:${i.path}`, label: nameOf(i.path), detail: dirOf(i.path), group: "Files", scope: "Files", icon: "file", run: () => open(i.path) })),
     ...[...new Set(items.flatMap((i) => i.tags))].sort().map((t): SearchItem => ({ id: `t:${t}`, label: `#${t}`, detail: `${items.filter((i) => i.tags.includes(t)).length} notes`, group: "Tags", scope: "Notes", icon: "tag", run: () => setPage("views") })),
-    { id: "c:new", label: "New note", shortcut: "Ctrl N", group: "Commands", scope: "Commands", icon: "new-file", run: () => newNote() },
-    { id: "c:seal", label: "Seal this note…", group: "Commands", scope: "Commands", icon: "lock", disabled: !note || note.sealed, why: note?.sealed ? "It is sealed" : "Open a note first", run: () => note && actions.seal(note.path) },
-    { id: "c:trash", label: "Show the trash", group: "Commands", scope: "Commands", icon: "trash", run: () => { setPage("notes"); setHideL(false); setTrashOpen(true); } },
-    { id: "c:empty", label: "Empty the trash…", group: "Commands", scope: "Commands", icon: "trash", run: () => setAsk({ title: "Empty the trash?", note: "Everything in it leaves the hub for good; it can't be restored.", danger: true, ok: "Empty trash", run: () => api.emptyTrash().then(() => setTrashVersion((n) => n + 1), fail) }) },
-    { id: "c:graph", label: "Show in graph", group: "Commands", scope: "Commands", icon: "a-trace", disabled: !note, why: "Open a note first", run: () => note && actions.graph(note.path) },
-    { id: "c:jl", label: "Restart the Julia session", group: "Commands", scope: "Commands", icon: "debug-restart", run: () => { api.restart("julia").catch(fail); } },
-    { id: "c:py", label: "Restart the Python session", group: "Commands", scope: "Commands", icon: "debug-restart", run: () => { api.restart("python").catch(fail); } },
-    { id: "c:edit", label: mode === "edit" ? "Back to Live" : "Edit the Markdown", group: "Commands", scope: "Commands", icon: "command", disabled: !note, why: "Open a note first", run: () => setMode((m) => (m === "edit" ? "live" : "edit")) },
-    ...noteMenu().flatMap((m): SearchItem[] => (typeof m === "object" && "run" in m ? [{ id: `c:${m.id}`, label: m.label, group: "Commands", scope: "Commands", icon: "add", disabled: !note || mode === "read" || m.disabled, why: !note ? "Open a note first" : mode === "read" ? "Switch to Live or Edit" : m.why, run: m.run }] : [])),
-    { id: "h:about", label: "About Malachite", group: "Help", scope: "Commands", icon: "info", run: () => openAbout() },
-    ...(["notes", "views", "graph", "log"] as Page[]).map((p, i): SearchItem => ({ id: `g:${p}`, label: `Go to ${p[0].toUpperCase()}${p.slice(1)}`, shortcut: `Alt ${i + 1}`, group: "Commands", scope: "Commands", icon: "go", run: () => setPage(p) })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [items, note, mode, open, newNote, fail]);
+    ...commands.filter((c) => !c.quiet && !c.sub).map((c): SearchItem => ({
+      id: `c:${c.id}`, label: c.label, shortcut: c.shortcut, group: MENUS.find((m) => m.id === c.menu)?.label ?? "Commands", scope: "Commands", icon: c.icon, disabled: !isEnabled(c), why: c.why, run: c.run,
+    })),
+  ];
+
+  /** Our picker's preview of a note: its title, when it changed, its size. */
+  const describe = (e: FileEntry) => {
+    const it = items.find((i) => i.path === e.path), size = sizes.get(e.path);
+    return it && <>
+      {it.title !== nameOf(e.path) && <small>{it.title}</small>}
+      <small>changed {new Date(it.mtime).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}{size === undefined ? "" : ` · ${size < 1e3 ? `${size} B` : size < 1e6 ? `${(size / 1e3).toFixed(1)} kB` : `${(size / 1e6).toFixed(1)} MB`}`}</small>
+    </>;
+  };
 
   const t = current ? typeOf(current) : "";
   const nRunning = Object.values(running).filter(Boolean).length;
   const mdCount = items.filter((i) => i.type === "md").length;
 
   return (
-    <div className="win frame">
+    <div className={`win frame${ws ? "" : " start"}`}>
       <header className="bar">
         <span className="lk"><AppMark app="malachite" size={26} idle label="Malachite" /><span className="wm">Malachite</span></span>
-        {hub && <HubSelector app="Malachite" hub={kitHub({ ...hub, shown: hub.shown })} hubs={hubs.map(kitHub)}
-          onSwitch={(id) => api.hubOpen(id).then((r) => window.open(r.url, "_blank"), fail)}
-          onNew={() => setAsk({ title: "New hub", label: "Name", ok: "Create", note: "It goes in ~/Documents/paperboat and opens in a new window.",
-            run: (n) => n.trim() && api.hubNew(n.trim()).then((r) => { api.hubs().then(setHubs); window.open(r.url, "_blank"); }, fail) })} />}
+        <MenuBar commands={commands} menus={MENUS} />
+        {ws && <WorkspaceWell workspace={ws} home={home} recent={recentItems} hubs={hubs.map(kitHub)} onOpenFolder={openFolder} onConnect={() => setDlg("connect")}
+          onClose={closeHub} onSwitchHub={switchHub} onNewHub={newHub} />}
         <span className="bend">
-          {page === "notes" && <Key kind="primary" icon="new-file" onClick={() => newNote()}>New note</Key>}
+          {ws && page === "notes" && <Key kind="primary" icon="new-file" onClick={() => newNote()}>New note</Key>}
           <Runtimes running={nRunning} version={peekVersion} />
           <Notifications {...notes} />
-          {page === "notes" && <PanelsKey layout={LAYOUT} onToggle={(id) => (id === "l" ? setHideL : setHideR)((h) => !h)}
+          {ws && page === "notes" && <PanelsKey layout={LAYOUT} onToggle={(id) => (id === "l" ? setHideL : setHideR)((h) => !h)}
             panels={[{ id: "l", label: "Files", keys: "Ctrl B", shown: !hideL }, { id: "r", label: "Links", keys: "Ctrl Alt B", shown: !hideR }]} />}
           <span className="lsep" />
-          <ThemePicker theme={theme} onChange={setTheme} />
+          <ThemePicker theme={theme} onChange={changeTheme} />
+          <WindowKeys />
         </span>
       </header>
 
-      <Rail label="Malachite pages" wide={wide} onWide={setWide} page={page} onPage={(p) => setPage(p as Page)}
+      {ws && <Rail label="Malachite pages" wide={wide} onWide={setWide} page={page} onPage={(p) => setPage(p as Page)}
         pages={[{ id: "notes", label: "Notes", icon: "a-notes", keys: "Alt+1", count: nRunning ? "live" : mdCount }, { id: "views", label: "Views", icon: "a-views", keys: "Alt+2" },
           { id: "graph", label: "Graph", icon: "a-trace", keys: "Alt+3" }, { id: "log", label: "Log", icon: "a-log", keys: "Alt+4" }]}
         foot={[{ id: "search", label: "Search", icon: "search", keys: "Ctrl+K" }, { id: "settings", label: "Settings", icon: "a-settings" }, { id: "help", label: "Help", icon: "question", keys: "F1" }]}
-        onFoot={(id) => { if (id === "search") setSearch(true); else if (id === "settings") setSettings(true); else openAbout(); }} />
+        onFoot={(id) => { if (id === "search") setSearch(true); else if (id === "settings") setSettings(true); else openAbout(); }} />}
 
-      <main className="pages">
+      {!ws && <main className="pages"><div className="bay"><section className="panel start" aria-label="Start">
+        {ws === null && <Start app="Malachite" noun="note" nouns="notes" hubs hubOnly recent={recent} home={home}
+          onOpenFolder={openFolder} onOpenFile={openFile} onNew={() => setDlg("connect")} onConnect={() => setDlg("connect")} onNewHub={newHub} onRecent={onRecent} />}
+      </section></div></main>}
+      {ws && <main className="pages">
         {page === "notes" && (
           <div className="notes-page">
-            <Panel name={trashOpen ? "Trash" : hub?.name ?? "Hub"} count={trashOpen ? undefined : `${items.length}`} side="left" hidden={hideL} onHidden={setHideL} icon="a-notes" width={262}
+            <Panel name={trashOpen ? "Trash" : "Files"} count={trashOpen ? undefined : `${items.length}`} side="left" hidden={hideL} onHidden={setHideL} icon="a-notes" width={262}
               tools={<>
                 {!trashOpen && <><Key size="sm" kind="quiet" round icon="new-file" label="New note (Ctrl N)" onClick={() => newNote("")} /><Key size="sm" kind="quiet" round icon="new-folder" label="New folder" onClick={() => actions.newFolder("")} /></>}
                 <Key size="sm" kind="quiet" round icon="trash" label={trashOpen ? "Back to the hub" : "Trash"} aria-pressed={trashOpen} onClick={() => setTrashOpen((o) => !o)} />
@@ -476,7 +583,7 @@ export function App() {
                 {note && mode === "read" && <ReadView note={note} runs={runs} resolve={resolve} look={look} onLink={onLink} onRun={runCell} onStop={stopCell} media={mediaFor} />}
                 {note && mode !== "read" && (() => {
                   const editor = <Editor key={`${note.path}:${note.sealed}:${mode}:${restored}`} value={draft ?? note.text} language={markdown} settings={look.settings} appTheme={look.appTheme}
-                    readOnly={note.sealed} ariaLabel={`${note.title}, Markdown`} onChange={setDraft} keys={saveKeys}
+                    readOnly={note.sealed} ariaLabel={`${note.title}, Markdown`} onChange={setDraft}
                     extra={mode === "live" ? liveExt : dropExt} onView={(v) => { liveView.current = v; }} />;
                   return (
                     <div className={`edit ${mode}`} onContextMenu={(e) => { if ((e.target as HTMLElement).closest(".cm-editor")) { e.preventDefault(); setCtx({ x: e.clientX, y: e.clientY, at: liveView.current?.posAtCoords({ x: e.clientX, y: e.clientY }) ?? null }); } }}>
@@ -493,7 +600,7 @@ export function App() {
                     </div>
                   );
                 })()}
-                {current && t !== "md" && <FileView path={current} text={plain} look={look} keys={saveKeys} onChange={setDraft} media={mediaFor} apps={apps}
+                {current && t !== "md" && <FileView path={current} text={plain} look={look} onChange={setDraft} media={mediaFor} apps={apps}
                   onApp={(app, copy) => { const label = apps.find((a) => a.name === app)?.label ?? app;
                     api.openIn(app, current, copy).then((r) => { window.open(r.url, "_blank"); show({ title: copy ? `Copied to ${label}` : `Opened in ${label}`, detail: copy ? `${r.folder}/${r.file} · not in the hub` : `${label} works in ${hub?.name ?? "the hub"}`, state: "done" }); }, fail); }} />}
               </div>
@@ -526,20 +633,31 @@ export function App() {
             ask={(title, value, ok, run) => setAsk({ title, label: "Name", value, ok, run: (n) => n.trim() && run(n.trim()) })} />
         )}
         </div>}
-      </main>
+      </main>}
 
       {search && <Search items={searchItems} scopes={["All", "Notes", "Files", "Commands"]} placeholder={`Search ${hub?.name ?? "the hub"} or run a command`} onClose={() => setSearch(false)} />}
+      {settings && !hub && <Dialog title="Settings" onClose={() => setSettings(false)}><p>Open a hub to set it up here. The theme is in View › Theme, for every Paperboat app.</p></Dialog>}
       {settings && hub && (
         <Dialog title="Settings" tags={["Hub", hub.name]} wide onClose={() => setSettings(false)}>
           <HubSettings hub={kitHub({ ...hub, shown: hub.shown })} values={{ author: hub.author, keep: hub.keep, ignore: hub.ignore }}
             onSet={(k, v) => api.hubSet(k as "author" | "keep" | "ignore", String(v)).then(setHub, fail)}
             onRename={() => setAsk({ title: "Rename the hub", label: "Name", value: hub.name, ok: "Rename", note: "The folder keeps its name; apps show this one.",
-              run: (n) => n.trim() && api.hubSet("name", n.trim()).then((h) => { setHub(h); document.title = `${h.name} · Malachite`; api.hubs().then(setHubs); }, fail) })}
+              run: (n) => n.trim() && api.hubSet("name", n.trim()).then((h) => { setHub(h); document.title = `${h.name} · Malachite`; api.hubs().then(setHubs); loadWs(); }, fail) })}
             onMove={() => show({ title: "Move the hub", detail: `Close it first, then: paperboat hub move ${hub.name} <folder>` })}
             onRemove={() => setAsk({ title: `Take ${hub.name} off the list?`, note: "Paperboat forgets it; the folder and its files stay. Opening it again adds it back.", danger: true, ok: "Remove from the list",
               run: () => api.hubForget(hub.id).then(() => api.hubs().then(setHubs), fail) })} />
         </Dialog>
       )}
+      {dlg === "connect" && <ConnectHub app="Malachite" hubOnly hubs={hubs.map(kitHub)} onConnect={switchHub} onNew={newHub} onClose={() => setDlg("")} />}
+      {dlg === "open" && ws && <OpenFile what="a note" types={["md"]} kinds="Notes" hub={kitHub(hubs.find((h) => h.id === ws.hub) ?? { id: ws.hub, name: ws.name, shown: ws.root, place: "local" })}
+        list={async () => entries} describe={describe} onOpen={(p) => { setDlg(""); open(p); }} onClose={() => setDlg("")} />}
+      {dlg === "save" && ws && current && <SaveFile what={typeOf(current) === "md" ? "the note" : "the file"} types={[typeOf(current)]} name={nameOf(current).replace(/\.[^.]+$/, "")}
+        hub={kitHub(hubs.find((h) => h.id === ws.hub) ?? { id: ws.hub, name: ws.name, shown: ws.root, place: "local" })} list={async () => entries} onSave={saveAs} onClose={() => setDlg("")} />}
+      {(dlg === "folder" || dlg === "file") && <TypedPath title={dlg === "folder" ? "Open folder" : "Open a local file"} what={dlg} onOpen={(p) => openPath(p)} onClose={() => setDlg("")} />}
+      {notHub && <NotAHub name={notHub.name} onMake={() => { openPath(notHub.path, true); setNotHub(null); }} onOpenHub={() => { setNotHub(null); setDlg("connect"); }} onClose={() => setNotHub(null)} />}
+      {unsaved && current && <Unsaved name={nameOf(current)} closing={unsaved.closing}
+        onSave={() => { const then = unsaved.then; setUnsaved(null); flush.current().then(() => { setDraft(null); then(); }); }}
+        onDiscard={() => { const then = unsaved.then; setUnsaved(null); setDraft(null); then(); }} onClose={() => setUnsaved(null)} />}
       {ask && <AskDialog ask={ask} onClose={() => setAsk(null)} />}
       {about && <About app="malachite" role="An engineering notebook: Markdown notes with Julia and Python cells" version={__VERSION__}
         paperboat={about.paperboat} repo="paperboatlab/malachite" credits={CREDITS} onClose={() => setAbout(null)}
@@ -550,7 +668,8 @@ export function App() {
 }
 
 /** A hub as the kit draws it. */
-const kitHub = (h: { id: string; name: string; shown: string; place: Place; missing?: boolean; conflicts?: string[] }): KitHub => ({ id: h.id, name: h.name, place: h.place, path: h.shown, missing: h.missing, conflicts: h.conflicts?.length });
+const kitHub = (h: { id: string; name: string; shown: string; place: Place; missing?: boolean; conflicts?: string[]; notes?: number }): KitHub =>
+  ({ id: h.id, name: h.name, place: h.place, path: h.shown, missing: h.missing, conflicts: h.conflicts?.length, holds: h.notes === undefined ? undefined : `${h.notes} note${h.notes === 1 ? "" : "s"}` });
 
 /** A CSV's numeric columns against its first: what a run left behind, at a glance. */
 function CsvPlot({ text }: { text: string }) {
@@ -570,7 +689,7 @@ function CsvPlot({ text }: { text: string }) {
 
 /** A file that isn't a note: another app's (its name and type), an image, or text in the kit's editor
  *  with its language, linted and completed by the hub's session for Julia and Python. */
-function FileView({ path, text, look, keys, onChange, media, apps, onApp }: { path: string; text: string | null; look: CodeLook; keys: { key: string; run: () => boolean }[]; onChange: (t: string) => void; media: (p: string, alt: string) => React.ReactNode; apps: { name: string; label: string }[]; onApp: (app: string, copy: boolean) => void }) {
+function FileView({ path, text, look, onChange, media, apps, onApp }: { path: string; text: string | null; look: CodeLook; onChange: (t: string) => void; media: (p: string, alt: string) => React.ReactNode; apps: { name: string; label: string }[]; onApp: (app: string, copy: boolean) => void }) {
   const t = typeOf(path), owner = OWNER[t], language = languageFor(path);
   const app = owner && apps.find((a) => a.label === owner || a.name === owner.toLowerCase());
   const session = language.runtime === "julia" || language.runtime === "python" ? SESSIONS[language.runtime] : undefined;
@@ -588,7 +707,7 @@ function FileView({ path, text, look, keys, onChange, media, apps, onApp }: { pa
       {mediaOf(path) && media(path, "")}
       {t === "csv" && text !== null && <CsvPlot text={text} />}
       {text !== null && (
-        <div className="fedit"><Editor key={path} value={text} language={language} session={session} settings={settings} appTheme={look.appTheme} ariaLabel={`${nameOf(path)}, ${language.label}`} onChange={onChange} keys={keys} /></div>
+        <div className="fedit"><Editor key={path} value={text} language={language} session={session} settings={settings} appTheme={look.appTheme} ariaLabel={`${nameOf(path)}, ${language.label}`} onChange={onChange} /></div>
       )}
     </div>
   );

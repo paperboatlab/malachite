@@ -1,4 +1,6 @@
 // The app server's API (server/main.ts), typed for the page.
+import type { Theme } from "@paperboatlab/ui";
+import type { RecentEntry } from "@paperboatlab/ui/workspace";
 export type Entry = { path: string; name: string; kind: "dir" | "file"; size?: number; mtime?: number; children?: Entry[] };
 export type Props = Record<string, string | string[]>;
 export type Item = { path: string; name: string; type: string; title: string; props: Props; tags: string[]; links: string[]; cells: number; mtime: number };
@@ -18,14 +20,18 @@ export type Trashed = { id: string; path: string; kind: "file" | "folder"; time:
 export type HubConf = { id: string; name: string; schema: number; author: string; created: string; keep: "90d" | "1y" | "always"; ignore: string; root: string; shown: string; place: Place; conflicts: string[] };
 /** A hub this machine knows ($PAPERBOAT_HOME/hubs.toml). */
 export type Place = "local" | "google-drive" | "onedrive" | "dropbox" | "icloud";
-export type KnownHub = { id: string; path: string; shown: string; place: Place; name: string; missing?: boolean; conflicts?: string[] };
+export type KnownHub = { id: string; path: string; shown: string; place: Place; name: string; missing?: boolean; conflicts?: string[]; notes?: number };
+/** What Malachite works in (the kit's `Workspace`): a hub, or nothing (the Start page). */
+export type Workspace = { kind: "hub"; root: string; name: string; hub: string };
+/** Opening a workspace: the hub, and the file to open in it (a file opened from outside). */
+export type Entered = { workspace: Workspace | null; open?: string };
 export type Version = { id: string; time: string; author: string; what: string };
 export type Peek = { sessions: Session[]; runtimes: { name: string; version: string }[] };
 
 async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
   const r = await fetch(url, { method, headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
   const j = await r.json().catch(() => ({ error: r.statusText }));
-  if (!r.ok) throw new Error(j.error ?? r.statusText);
+  if (!r.ok) throw Object.assign(new Error(j.error ?? r.statusText), { body: j });
   return j as T;
 }
 const q = (p: string) => encodeURIComponent(p);
@@ -34,8 +40,15 @@ export const api = {
   hub: () => call<HubConf>("GET", "/api/hub"),
   hubs: () => call<KnownHub[]>("GET", "/api/hubs"),
   hubSet: (key: "name" | "author" | "keep" | "ignore", value: string) => call<HubConf>("POST", "/api/hub/config", { key, value }),
-  hubOpen: (id: string) => call<{ url: string }>("POST", "/api/hubs/open", { id }),
-  hubNew: (name: string) => call<{ url: string }>("POST", "/api/hubs/new", { name }),
+  workspace: () => call<{ workspace: Workspace | null; home: string }>("GET", "/api/workspace"),
+  /** { id }: a known hub; { path }: a folder or a file (a plain folder throws with `body.notHub`), `make` makes it a hub; {}: close. */
+  enter: (to: { id: string } | { path: string; make?: boolean } | Record<string, never>) => call<Entered>("POST", "/api/workspace", to),
+  hubNew: (name: string) => call<Entered>("POST", "/api/hubs/new", { name }),
+  recent: () => call<{ version: 1; recent: RecentEntry[] }>("GET", "/api/recent"),
+  opened: (p: string) => call("POST", "/api/recent", { path: p }),
+  clearRecent: () => call("POST", "/api/recent/clear", {}),
+  settings: () => call<{ version: 1; theme: Theme }>("GET", "/api/settings"),
+  setTheme: (theme: Theme) => call("PUT", "/api/settings", { theme }),
   hubForget: (id: string) => call("POST", "/api/hubs/remove", { id }),
   apps: () => call<{ name: string; label: string }[]>("GET", "/api/apps"),
   openIn: (app: string, p: string, copy: boolean) => call<{ url: string; folder: string; file: string }>("POST", "/api/apps/open", { app, path: p, copy }),

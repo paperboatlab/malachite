@@ -236,3 +236,9 @@ figure.media.img figcaption { margin-top: 6px; font-size: var(--size-2xs); color
 .ver time { color: var(--text-muted); }
 .ver em { font-style: normal; color: var(--text-muted); }
 .fcard-keys { grid-column: 3; grid-row: 1 / span 2; display: inline-flex; gap: 6px; }
+
+/* the Start page (the one file workflow): no hub, so no rail; the bay holds the kit's Start */
+.win.start { grid-template-columns: 1fr; padding-left: var(--gutter); }
+.panel.start { display: flex; }
+/* a menu bar's menu as wide as its longest item (the kit's sits in the narrow title's box and would wrap) */
+.menu-wrap > .menu { width: max-content; }
