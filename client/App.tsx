@@ -625,7 +625,7 @@ export function App() {
         {page !== "notes" && <div className="bay">
         {page === "graph" && (
           <Panel name="Graph" showName={false} count={`${mdCount} notes · ${allLinks.length} links`}>
-            <HubGraph focus={current} links={allLinks} items={items} onOpen={(p) => { open(p); setPage("notes"); }} />
+            <HubGraph focus={current} links={allLinks} items={items} hub={wsId ?? undefined} onOpen={(p) => { open(p); setPage("notes"); }} />
           </Panel>
         )}
         {page === "log" && (
