@@ -25,7 +25,7 @@ export const isConflictCopy = (name: string) =>
   /\([^)]*conflicted copy[^)]*\)/i.test(name) || /\.sync-conflict-\d{8}-\d{6}/.test(name) || /\.conflict\d+$/.test(name);
 export type Known = { id: string; path: string; place: Place };
 /** A known hub as the selector, the picker and `hub list` show it. */
-export type HubInfo = Known & { name: string; shown: string; missing?: boolean; conflicts?: string[] };
+export type HubInfo = Known & { name: string; shown: string; missing?: boolean; conflicts?: string[]; notes?: number };
 
 /** A path as people read it: the home folder as ~. */
 export const tilde = (p: string) => (p === os.homedir() || p.startsWith(os.homedir() + path.sep) ? `~${p.slice(os.homedir().length)}` : p);
@@ -78,8 +78,8 @@ export function infos(): HubInfo[] {
   return known().map((k) => {
     const c = fs.existsSync(k.path) ? peek(k.path) : null;
     if (!c) return { ...k, place: placeOf(k.path), name: path.basename(k.path), shown: tilde(k.path), missing: true };
-    const conflicts = conflictsIn(k.path);
-    return { ...k, place: placeOf(k.path), name: c.name || path.basename(k.path), shown: tilde(k.path), ...(conflicts.length ? { conflicts } : {}) };
+    const all = filesIn(k.path), conflicts = all.filter((f) => isConflictCopy(path.posix.basename(f)));
+    return { ...k, place: placeOf(k.path), name: c.name || path.basename(k.path), shown: tilde(k.path), notes: all.filter((f) => f.endsWith(".md")).length, ...(conflicts.length ? { conflicts } : {}) };
   });
 }
 
@@ -93,8 +93,11 @@ export function find(word: string): HubInfo {
   throw new HubError(`no hub ${word} · paperboat hub list shows them`, 404);
 }
 
-/** The conflict copies in a hub, as hub-relative paths (dot folders and node_modules skipped). */
-export function conflictsIn(root: string): string[] {
+/** The conflict copies in a hub, as hub-relative paths. */
+export const conflictsIn = (root: string) => filesIn(root).filter((f) => isConflictCopy(path.posix.basename(f)));
+
+/** A hub's files, as hub-relative paths (dot folders and node_modules skipped). */
+function filesIn(root: string): string[] {
   const out: string[] = [];
   const walk = (dir: string, rel: string) => {
     let names: fs.Dirent[];
@@ -103,9 +106,63 @@ export function conflictsIn(root: string): string[] {
       if (d.name.startsWith(".") || d.name === "node_modules") continue;
       const r = rel ? `${rel}/${d.name}` : d.name;
       if (d.isDirectory()) walk(path.join(dir, d.name), r);
-      else if (isConflictCopy(d.name)) out.push(r);
+      else out.push(r);
     }
   };
   walk(root, "");
   return out;
+}
+
+/** The hub a path lies in (the folder itself, or the nearest above it holding a hub's settings), or null. */
+export function hubAbove(p: string): string | null {
+  for (let d = path.resolve(p); ; d = path.dirname(d)) {
+    if (peek(d)) return d;
+    if (path.dirname(d) === d) return null;
+  }
+}
+
+// ── the shared store (plans/2026-11-26_11-05_one_file_workflow.md, "The contract every app follows"):
+// `recent.json` and `settings.json` under $PAPERBOAT_HOME, read by every app, written whole then renamed.
+
+export type RecentEntry = { kind: "folder" | "hub" | "file"; path: string; hub?: string; app?: string; at: number };
+export type Theme = "light" | "dark" | "system";
+const RECENT_MAX = 40;
+
+function readJson(name: string): any {
+  try { return JSON.parse(fs.readFileSync(path.join(paperboatHome(), name), "utf8")); } catch { return null; }
+}
+function writeJson(name: string, value: unknown) {
+  const f = path.join(paperboatHome(), name), tmp = `${f}.${process.pid}.tmp`;
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`);
+  fs.renameSync(tmp, f);
+}
+
+/** Everything opened, newest first, every app's (each shows its own files and every folder and hub). */
+export function recent(): RecentEntry[] {
+  const list = readJson("recent.json")?.recent;
+  return (Array.isArray(list) ? list : []).filter((e: RecentEntry) => !!e && ["folder", "hub", "file"].includes(e.kind) && typeof e.path === "string" && e.path !== "" && Number.isFinite(e.at)).slice(0, RECENT_MAX);
+}
+
+/** Malachite opened this: first in the list, an older entry of the same kind and path gone. */
+export function addRecent(e: { kind: RecentEntry["kind"]; path: string; hub?: string }) {
+  const entry: RecentEntry = { ...e, app: "malachite", at: Math.floor(Date.now() / 1000) };
+  writeJson("recent.json", { version: 1, recent: [entry, ...recent().filter((x) => x.kind !== e.kind || x.path !== e.path)].slice(0, RECENT_MAX) });
+}
+
+/** One entry gone (its folder is), or, without one, what Malachite shows (hubs and its own files): Clear recent. */
+export function dropRecent(e?: { kind: RecentEntry["kind"]; path: string }) {
+  const keep = (x: RecentEntry) => (e ? x.kind !== e.kind || x.path !== e.path : x.kind !== "hub" && !(x.kind === "file" && x.app === "malachite"));
+  writeJson("recent.json", { version: 1, recent: recent().filter(keep) });
+}
+
+/** The theme every app starts in ("system" when unset). */
+export function settings(): { version: 1; theme: Theme } {
+  const t = readJson("settings.json")?.theme;
+  return { version: 1, theme: t === "light" || t === "dark" ? t : "system" };
+}
+
+/** A change in one app, for every app's next start; what else the file holds stays. */
+export function setTheme(theme: Theme) {
+  writeJson("settings.json", { ...readJson("settings.json"), version: 1, theme });
 }

@@ -143,7 +143,7 @@ test("media: byte ranges for seeking; uploads never overwrite (a replaced file g
   const { serve } = await import("../server/main.ts");
   const { Control } = await import("../server/control.ts");
   const dir = tmp();
-  const { server, hub } = serve(dir, 0, new Control(path.join(dir, "none.sock"), false));
+  const served = serve(dir, 0, new Control(path.join(dir, "none.sock"), false)), { server } = served, hub = served.hub!;
   await new Promise((r) => server.once("listening", r));
   const base = `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`;
   const up = (p: string, body: string, replace = false) => fetch(`${base}/api/upload?path=${encodeURIComponent(p)}${replace ? "&replace=1" : ""}`, { method: "POST", body, headers: { origin: base } }).then((r) => r.json());
