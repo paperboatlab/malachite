@@ -40,7 +40,12 @@ export function paperboatHome(): string {
 const listFile = () => path.join(paperboatHome(), "hubs.toml");
 
 /** Where new hubs go unless told (REBRAND Settings › Malachite › Hubs). */
-export const defaultFolder = (name: string) => path.join(os.homedir(), "Documents", "paperboat", name);
+/** A new hub's folder by its name, under ~/Documents/paperboat. A name is never a path: `hub new /x/y` once joined
+ *  the path under the default folder (a cloud folder, there) instead of refusing. */
+export const defaultFolder = (name: string) => {
+  if (!name || /[\\/"]/.test(name) || name === "." || name === "..") throw new HubError(`"${name}" is a hub's name, not a folder: paperboat hub new <name> --in <folder>`);
+  return path.join(os.homedir(), "Documents", "paperboat", name);
+};
 
 export function known(): Known[] {
   const f = listFile();

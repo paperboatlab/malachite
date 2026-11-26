@@ -36,6 +36,13 @@ test("new, list, rename, config, move, remove: the list follows the hub by its i
   assert.equal(hub("add", path.join(home, "Documents")).code, 2, "a plain folder is not a hub");
 });
 
+test("a path given as the name is refused, never made under ~/Documents/paperboat", () => {
+  const r = hub("new", path.join(home, "scratch", "lab"));
+  assert.equal(r.code, 2, r.out);
+  assert.match(r.err, /a hub's name, not a folder/);
+  assert.ok(!fs.existsSync(path.join(home, "Documents", "paperboat", home.slice(1))));
+});
+
 test("a hub moved by hand is found again by pointing at its folder", () => {
   const { path: dir } = hub("new", "pump", "--json").json();
   const to = path.join(home, "moved-pump");
