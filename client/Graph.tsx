@@ -2,7 +2,6 @@
 // Every node shows its file type (icon and colour, as the file tree); the open note has the ring.
 import { NoteGraph, type GraphNode } from "@paperboatlab/ui/graph";
 import { fileIconFor } from "@paperboatlab/ui/files";
-import "@xyflow/react/dist/base.css";
 import { useMemo } from "react";
 import type { Item } from "./api.ts";
 
@@ -23,8 +22,8 @@ export function around(from: string, links: Link[]) {
 }
 
 /** The whole hub (every note, and every file a note links to), or with `local` the open note's neighbours. */
-export function HubGraph({ focus, links, items, local = false, onOpen }: {
-  focus: string | null; links: Link[]; items: Item[]; local?: boolean; onOpen: (p: string) => void;
+export function HubGraph({ focus, links, items, local = false, hub, onOpen }: {
+  focus: string | null; links: Link[]; items: Item[]; local?: boolean; hub?: string; onOpen: (p: string) => void;
 }) {
   const { nodes, edges } = useMemo(() => {
     const byPath = new Map(items.map((i) => [i.path, i]));
@@ -37,5 +36,5 @@ export function HubGraph({ focus, links, items, local = false, onOpen }: {
     });
     return { nodes, edges: g.links.map((l) => ({ source: l.from, target: l.to })) };
   }, [focus, links, items, local]);
-  return <NoteGraph nodes={nodes} links={edges} focus={focus ?? undefined} compact={local} onOpen={onOpen} ariaLabel={local ? "Local graph" : "Hub graph"} />;
+  return <NoteGraph nodes={nodes} links={edges} focus={focus ?? undefined} compact={local} keep={hub} onOpen={onOpen} ariaLabel={local ? "Local graph" : "Hub graph"} />;
 }
