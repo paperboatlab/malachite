@@ -168,11 +168,14 @@ export class Sessions {
   async peek() {
     const leases = await this.control.call<Lease[]>("ps");
     const mine = leases.filter((l) => l.owner === `malachite:${this.hub.name}` && l.project === this.hub.root);
-    const sessions = await Promise.all(mine.map(async (l) => ({
-      ...l,
-      stats: await this.control.call("stats", { lease: l.id }).then((r: any) => r.stats, () => null),
-      running: [...this.running.values()].filter((r) => r.lang === l.runtime && r.state === "running").map((r) => ({ note: r.note, hash: r.hash, since: r.ran })),
-    })));
+    const sessions = await Promise.all(mine.map(async (l) => {
+      const lang = l.runtime.split("@")[0] as Lang;   // the lease names its runtime "julia@1.11.9"
+      return {
+        ...l, lang,
+        stats: await this.control.call("stats", { lease: l.id }).then((r: any) => r.stats, () => null),
+        running: [...this.running.values()].filter((r) => r.lang === lang && r.state === "running").map((r) => ({ note: r.note, hash: r.hash, since: r.ran })),
+      };
+    }));
     const list = await this.control.call<{ runtimes: { name: string; version: string; modes: string[] }[] }>("runtimes.list");
     return { sessions, runtimes: list.runtimes.filter((r) => r.modes.includes("session")).map((r) => ({ name: r.name, version: r.version })) };
   }
