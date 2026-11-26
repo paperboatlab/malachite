@@ -1,34 +1,68 @@
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
 name: release
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
 
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
 # A tag v<version> publishes malachite-<version>.tar.gz (one top folder: bin/, server/, dist/, ...), the asset
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
 # `paperboat app install malachite` unpacks. The server imports only node: builtins, so no node_modules.
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
 # A tag with a pre-release part (v0.1.0-beta.1) is a prerelease: only the beta channel sees it.
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
 
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
 on:
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
   push:
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
     tags: ['v*']
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
 
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
 permissions:
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
   contents: write
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
 
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
 jobs:
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
   tarball:
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
     runs-on: ubuntu-24.04
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
     steps:
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
       - uses: actions/checkout@v4
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
       - uses: actions/setup-node@v4
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
         with: { node-version: 22, cache: npm }
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
       - run: npm ci && npm run build
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
       - name: Pack
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
         run: |
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
           v=${GITHUB_REF_NAME#v}
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
           [ "${v%%-*}" = "$(node -p 'require("./package.json").version')" ] || { echo "tag $GITHUB_REF_NAME isn't package.json's version"; exit 1; }
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
           top=malachite-$v
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
           mkdir $top
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
           cp -r bin server dist package.json LICENSE README.md commands.toml $top/
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
           tar -czf $top.tar.gz $top
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
           echo "TARBALL=$top.tar.gz" >> $GITHUB_ENV
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
           case $v in *-*) echo "PRE=--prerelease" >> $GITHUB_ENV ;; esac
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
       - run: gh release create "$GITHUB_REF_NAME" "$TARBALL" --generate-notes $PRE
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
         env:
+          cp node_modules/@paperboatlab/ui/src/marks/malachite/icon.png $top/icon.png  # the desktop entry's icon (paperboat app install)
           GH_TOKEN: ${{ github.token }}
