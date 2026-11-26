@@ -2,7 +2,7 @@
 // runtimes key with its peek (REBRAND "Runtimes key"): one key, never a row of pills.
 import { Icon, Key, Spinner, useDismiss } from "@paperboatlab/ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { api, type LogEvent, type Lang, type Links, type Peek, type Version } from "./api.ts";
+import { api, type LogEvent, type Links, type Peek, type Version } from "./api.ts";
 import { FileGlyph } from "./files.tsx";
 
 /** A backlink's line, its wikilinks shown as their text, the ones naming this note highlighted. */
@@ -90,7 +90,7 @@ export function RuntimesKey({ running, version }: { running: number; version: nu
     api.runtimes().then((p) => { setPeek(p); setError(""); }, (e) => setError(e.message));
   }, [open, version]);
   const act = (f: () => Promise<unknown>) => f().catch((e) => setError(e.message)).then(() => api.runtimes().then(setPeek, () => {}));
-  const started = new Set(peek?.sessions.map((s) => s.runtime));
+  const started = new Set<string>(peek?.sessions.map((s) => s.lang));
   return (
     <span className="rtw">
       <button ref={key} type="button" className={`key ico rtk${running ? " live" : ""}`} aria-expanded={open} title={`Runtimes${running ? `: ${running} running` : ""}`} onClick={() => setOpen((o) => !o)}>
@@ -102,10 +102,10 @@ export function RuntimesKey({ running, version }: { running: number; version: nu
           {error && <p className="rterr">{error}</p>}
           {!peek && !error && <p className="rterr"><Spinner size={12} /> asking paperboatd…</p>}
           {peek?.sessions.map((s) => {
-            const lang = s.runtime as Lang, busy = s.running.length > 0;
+            const lang = s.lang, busy = s.running.length > 0;
             return (
               <div key={s.id} className={`rt${busy ? " run" : ""}`}>
-                <span className="rlg">{s.runtime === "julia" ? "jl" : "py"}</span>
+                <span className="rlg">{lang === "julia" ? "jl" : "py"}</span>
                 <div><b>{s.runtime}</b><small>session · {s.backend} · up {dur(s.uptime_s)}{s.stats ? ` · ${mb(s.stats.memory_bytes)}` : ""}</small>
                   {busy ? <p className="now"><Spinner size={12} />running a cell in {s.running[0].note}</p> : <p>idle {dur(s.idle_s)}</p>}</div>
                 <div className="acts">

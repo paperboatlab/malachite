@@ -46,7 +46,7 @@ function fakeDaemon(sock: string, ipc: string, calls: string[]) {
         const m = JSON.parse(buf.slice(0, i));
         buf = buf.slice(i + 1);
         calls.push(m.op);
-        if (m.op === "acquire") acquired = { id: "l-1", runtime: m.args.runtime, mode: "session", owner: m.args.owner, backend: "podman", state: "running", ipc, project: m.args.project, digest: "sha256:abc", verified: "unsigned" };
+        if (m.op === "acquire") acquired = { id: "l-1", runtime: `${m.args.runtime}@3.12`, mode: "session", owner: m.args.owner, backend: "podman", state: "running", ipc, project: m.args.project, digest: "sha256:abc", verified: "unsigned" };
         const lease = acquired;
         const result = m.op === "acquire" ? lease : m.op === "ps" ? [lease, { ...lease, id: "other", owner: "someone else" }] : m.op === "stats" ? { stats: { cpu_percent: 1, memory_bytes: 1 << 20, pids: 3 } } : m.op === "runtimes.list" ? { runtimes: [{ name: "python", version: "3.12", modes: ["session"] }, { name: "omc", version: "1.27", modes: ["exec"] }] } : {};
         if (m.op === "acquire") c.write(JSON.stringify({ event: "lease.acquired", lease: "l-1" }) + "\n");
@@ -103,6 +103,7 @@ test("a cell runs in a session lease and its output is kept beside the note", as
   assert.ok(hub.events().some((e: any) => e.action === "cell.ran" && e.details.ok === true));
   const peek = await s.peek();
   assert.equal(peek.sessions[0].stats.pids, 3);
+  assert.equal(peek.sessions[0].lang, "python");   // the lease says "python@3.12"
   assert.deepEqual(peek.runtimes.map((r) => r.name), ["python"]);
   s.close();
   rsrv.close();
