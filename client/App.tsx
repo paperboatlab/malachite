@@ -448,9 +448,11 @@ export function App() {
   };
   const onRecent = (e: RecentEntry) => (e.kind === "hub" && e.hub && hubs.some((h) => h.id === e.hub && !h.missing) ? switchHub(e.hub) : openPath(e.path));
   const recentItems = recentMenu(recentFor({ version: 1, recent }, "malachite", { folders: false }), onRecent, () => { api.clearRecent().then(loadRecent, fail); });
-  /** Save as…: the text into a new file in the hub (a note gets a new id: it is another note), then that file shows. */
+  /** Save as…: the text into another file in the hub (a note without the old one's id and seal: it is another
+   *  note), then that file shows. Onto itself it is Save. */
   const saveAs = (to: string) => {
     if (!current) return;
+    if (to === current) { setDlg(""); flush.current(); return; }
     let text = draft ?? note?.text ?? plain ?? "";
     if (typeOf(current) === "md") { const { props, body } = split(text); for (const k of ["id", "sealed", "sealed_by", "hash"]) delete props[k]; text = join(props, body); }
     setDlg("");
