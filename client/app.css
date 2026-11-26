@@ -37,6 +37,9 @@ body { background: var(--surface-ground); color: var(--text); font: var(--size-s
 .doc pre code { border: 0; padding: 0; background: none; }
 .doc > div > pre { background: var(--surface-well); box-shadow: var(--well-shadow); border-radius: var(--radius-md); padding: 10px 12px; overflow: auto; }
 .doc blockquote { margin: 0 0 10px; padding: 2px 14px; border-left: 2px solid var(--line-strong); color: var(--text-muted); }
+.doc .callout { margin: 0 0 12px; padding: 8px 14px; border-left: 2px solid var(--accent); border-radius: var(--radius-sm); background: var(--surface-sunken); }
+.doc .callout-title { font-weight: 600; margin-bottom: 4px; }
+.doc .callout-body > :last-child { margin-bottom: 0; }
 .doc table { border-collapse: collapse; margin: 0 0 12px; } .doc th, .doc td { border: 1px solid var(--line); padding: 4px 10px; text-align: left; }
 .doc img { max-width: 100%; border-radius: var(--radius-md); }
 .doc a { color: var(--text); text-decoration-color: var(--line-strong); text-underline-offset: 3px; }

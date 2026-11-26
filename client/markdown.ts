@@ -63,6 +63,14 @@ export function renderer(resolve: Resolve, here: string) {
     }],
     renderer: {
       html: (t: Tokens.HTML | Tokens.Tag) => esc(t.text),
+      // ponytail: an Obsidian callout (`> [!note] Title`) as a titled box; `+`/`-` folding is read but not drawn
+      blockquote(t: Tokens.Blockquote) {
+        const c = /^\[!([\w-]+)\][+-]?[ \t]*(.*)(?:\n|$)/.exec(t.text);
+        if (!c) return false;
+        const type = c[1].toLowerCase(), title = c[2].trim() || type[0].toUpperCase() + type.slice(1);
+        return `<div class="callout" data-callout="${esc(type)}"><div class="callout-title">${m.parseInline(title, { async: false })}</div>`
+          + `<div class="callout-body">${m.parse(t.text.slice(c[0].length), { async: false })}</div></div>`;
+      },
       link(t: Tokens.Link) {
         const text = this.parser.parseInline(t.tokens);
         if (/^(https?:|mailto:)/i.test(t.href)) return `<a href="${esc(t.href)}" target="_blank" rel="noreferrer">${text}</a>`;
