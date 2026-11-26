@@ -63,3 +63,12 @@ test("a properties edit rewrites only the lines it changes", () => {
   assert.equal(patch(text, { id: "n_1", created: "2026-11-16T09:12:00Z", status: "done" }), '---\nid: n_1\ncreated: 2026-11-16T09:12:00Z\n# a comment\nstatus: done\n---\n# Pump\n');
   assert.equal(patch("# Bare\n", { kind: "note" }), "---\nkind: note\n---\n# Bare\n");
 });
+
+test("block lists, as Obsidian writes them, are read and stay block lists when edited", () => {
+  const text = '---\ntags:\n  - ST\n  - "a: b"\naliases:\n  - orbit\nallias:\n---\n# Flow\n';
+  const n = parse(text);
+  assert.deepEqual(n.props, { tags: ["ST", "a: b"], aliases: ["orbit"], allias: "" });
+  assert.deepEqual(n.tags, ["ST", "a: b"]);
+  assert.equal(patch(text, { ...n.props, tags: ["ST", "PM"] }), '---\ntags:\n  - ST\n  - PM\naliases:\n  - orbit\nallias:\n---\n# Flow\n');
+  assert.equal(patch(text, { tags: n.props.tags }), '---\ntags:\n  - ST\n  - "a: b"\n---\n# Flow\n');
+});
