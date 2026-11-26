@@ -575,7 +575,7 @@ export function App() {
                 <div className="crumb">
                   <span>{hub?.name} / {current.split("/").slice(0, -1).map((d) => `${d} / `).join("")}<b>{nameOf(current)}</b></span>
                   <span className="row-end">
-                    {(note || plain !== null) && <span>{draft !== null ? "saving…" : note?.sealed ? "sealed" : "saved"}</span>}
+                    {(note || plain !== null) && <span>{unsaved ? "not saved" : draft !== null ? "saving…" : note?.sealed ? "sealed" : "saved"}</span>}
                     {note && !note.sealed && <Key size="sm" icon="lock" onClick={() => actions.seal(note.path)} title="Seal: freeze the body and record its hash">Seal…</Key>}
                   </span>
                 </div>
