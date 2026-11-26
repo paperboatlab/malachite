@@ -322,7 +322,7 @@ function stream(res: http.ServerResponse, abs: string, headers: http.OutgoingHtt
 /** The paperboat CLI with --json: its answer, or its words as an error. */
 function paperboat(args: string[]): Promise<any> {
   return new Promise((resolve, reject) => {
-    const p = spawn(process.env.PAPERBOAT ?? "paperboat", [...args, "--json"], { stdio: ["ignore", "pipe", "pipe"] });
+    const p = spawn(process.env.PAPERBOAT_BIN ?? "paperboat", [...args, "--json"], { stdio: ["ignore", "pipe", "pipe"] });
     let out = "", err = "";
     p.stdout.on("data", (d) => (out += d));
     p.stderr.on("data", (d) => (err += d));

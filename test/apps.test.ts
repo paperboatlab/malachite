@@ -16,7 +16,7 @@ case "$1 $2" in
   *) echo '{"error":"no"}'; exit 2 ;;
 esac
 `, { mode: 0o755 });
-process.env.PAPERBOAT = bin; process.env.PAPERBOAT_HOME = tmp("apps-pb-"); process.env.HOME = home;
+process.env.PAPERBOAT_BIN = bin; process.env.PAPERBOAT_HOME = tmp("apps-pb-"); process.env.HOME = home;
 
 test("a file another app draws: open it there on the hub, or copy it out of the hub", async () => {
   const dir = tmp("apps-hub-");
