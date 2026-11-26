@@ -414,7 +414,7 @@ export function App() {
   const mdCount = items.filter((i) => i.type === "md").length;
 
   return (
-    <div className="win">
+    <div className="win frame">
       <header className="bar">
         <span className="lk"><AppMark app="malachite" size={26} idle label="Malachite" /><span className="wm">Malachite</span></span>
         {hub && <HubSelector app="Malachite" hub={kitHub({ ...hub, shown: hub.shown })} hubs={hubs.map(kitHub)}
@@ -424,10 +424,10 @@ export function App() {
         <span className="bend">
           {page === "notes" && <Key kind="primary" icon="new-file" onClick={() => newNote()}>New note</Key>}
           <Runtimes running={nRunning} version={peekVersion} />
+          <Notifications {...notes} />
           {page === "notes" && <PanelsKey layout={LAYOUT} onToggle={(id) => (id === "l" ? setHideL : setHideR)((h) => !h)}
             panels={[{ id: "l", label: "Files", keys: "Ctrl B", shown: !hideL }, { id: "r", label: "Links", keys: "Ctrl Alt B", shown: !hideR }]} />}
           <span className="lsep" />
-          <Notifications {...notes} />
           <ThemePicker theme={theme} onChange={setTheme} />
         </span>
       </header>
@@ -457,6 +457,7 @@ export function App() {
                 }} />}
             </Panel>
 
+            <div className="bay">
             <section className="panel note" aria-label="Note">
               <EditorTabs label="Open notes" current={current} onShow={(p) => open(p)} onClose={(p) => closeTabs([p])} menu={tabItems}
                 onUnpin={(p) => setPinned((s) => new Set([...s].filter((x) => x !== p)))}
@@ -499,6 +500,7 @@ export function App() {
               {note && <div className="efoot"><span>markdown · {note.body.split(/\s+/).filter(Boolean).length} words · {note.cells.length} cells</span>
                 <Segmented label="View" value={mode} onChange={setMode} options={[{ value: "read", label: "Read" }, { value: "live", label: "Live" }, { value: "edit", label: "Edit" }]} /><span>{links?.backlinks.length ?? 0} backlinks · {links?.links.length ?? 0} links</span></div>}
             </section>
+            </div>
 
             <Panel name="Links" side="right" hidden={hideR} onHidden={setHideR} icon="references" width={300}>
               <LinksCard links={links} self={current ?? ""} onOpen={open} onCreate={(n) => onLink(n, true)}
@@ -508,13 +510,14 @@ export function App() {
             </Panel>
           </div>
         )}
+        {page !== "notes" && <div className="bay">
         {page === "graph" && (
-          <Panel name="Graph" count={`${mdCount} notes · ${allLinks.length} links`}>
+          <Panel name="Graph" showName={false} count={`${mdCount} notes · ${allLinks.length} links`}>
             <HubGraph focus={current} links={allLinks} items={items} onOpen={(p) => { open(p); setPage("notes"); }} />
           </Panel>
         )}
         {page === "log" && (
-          <Panel name="Activity log" count={`${log.length} events · .malachite/log`}>
+          <Panel name="Activity log" showName={false} count={`${log.length} events · .malachite/log`}>
             <div className="lev big">{log.map((e, i) => <Ev key={i} e={e} path />)}</div>
           </Panel>
         )}
@@ -522,6 +525,7 @@ export function App() {
           <ViewsPage items={items} onOpen={(p) => open(p)} fail={fail}
             ask={(title, value, ok, run) => setAsk({ title, label: "Name", value, ok, run: (n) => n.trim() && run(n.trim()) })} />
         )}
+        </div>}
       </main>
 
       {search && <Search items={searchItems} scopes={["All", "Notes", "Files", "Commands"]} placeholder={`Search ${hub?.name ?? "the hub"} or run a command`} onClose={() => setSearch(false)} />}
