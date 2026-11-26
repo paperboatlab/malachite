@@ -73,7 +73,8 @@ flowchart LR
   the trash, a taken name becomes "<name> (2)").
 - `client/`: `App.tsx` (the shell: bar with the menu bar and the hub's workspace well, rail, cards, tabs,
   search, dialogs; one command list (`Command[]`: the kit's `fileMenu` with `hubOnly`, then Edit, View, Note,
-  Help) read by `MenuBar`, the command search and `useShortcuts`, chords such as Ctrl K Ctrl O included; the
+  Help) read by `MenuBar`, the command search and `useShortcuts`, chords such as Ctrl Shift O included; Settings (the kit's `Settings`: General, Malachite, Editor, Hub,
+  Shortcuts; Help › Keyboard shortcuts opens it on Shortcuts); the
   Start page with no hub; Open a hub (`ConnectHub`), our picker over the hub for Open file… and Save as…,
   `NotAHub`, `Unsaved` (the autosave waits while it asks), `TypedPath` in a browser and
   `window.paperboatShell`'s dialogs in a Paperboat window; tabs kept per hub; a note as Read, Live (the kit
@@ -84,10 +85,10 @@ flowchart LR
   (board, list, timeline over `views/*.toml`), `Side.tsx` (the Links card, the
   rows for the kit's runtimes key from `GET /api/runtimes`), `markdown.ts` (marked with wikilinks and embeds), `files.tsx`, `api.ts`.
 - **From the kit** (`@paperboatlab/ui`): the shell's parts (the bar `.win > .bar`, MenuBar and the command
-  registry, WindowKeys, Rail, Panel, PanelsKey, Search, Menu, Dialog, ThemePicker, Toasts, Notifications,
+  registry, WindowKeys, Rail, Panel, PanelsKey, Search, Menu, Dialog, Settings, ThemeSetting, ShortcutList, Toasts, Notifications,
   RuntimesKey), the one file workflow (`/workspace`: Start, WorkspaceWell, fileMenu, recentMenu, NotAHub,
   Unsaved, TypedPath, shell; `/hub`: ConnectHub, OpenFile, SaveFile, HubSettings), the file tree (`/files`), the editor with its
-  languages, themes and tab strip (`/editor`, `EditorTabs`:
+  languages, themes, tab strip and settings (`/editor`, `EditorTabs`, `EditorSettingsPane`:
   notes as Markdown, cells read-only, code files linted and completed by the hub's session through
   `POST /api/ask`), the plot (`/plot`), the graph layout (`/canvas`, drawn with React Flow). Malachite
   draws none of these itself.

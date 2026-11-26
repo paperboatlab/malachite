@@ -34,7 +34,7 @@ one (back to Start). The keys:
      - New note
    * - Ctrl O
      - Open file…: a picker over the hub
-   * - Ctrl K Ctrl O
+   * - Ctrl Shift O
      - Open folder…: a hub, or a folder to make one
    * - Ctrl S, Ctrl Shift S
      - Save (notes save themselves as you type), Save as…
@@ -46,8 +46,17 @@ one (back to Start). The keys:
      - Show or hide the files and the links
    * - Ctrl ,
      - Settings
+   * - Ctrl /
+     - Keyboard shortcuts: every key, in Settings › Shortcuts
 
 In a browser, Open folder… and Open file… take a typed path; in a Paperboat window they open the
-system's dialog. The theme (View › Theme) is the one every Paperboat app starts in.
+system's dialog.
+
+Settings (File › Settings…, the rail's Settings, Ctrl ,) is one window with a page per subject:
+General (the theme, Light, Dark or System, which applies to every Paperboat app; View › Theme
+sets it too), Malachite (how notes open and where cells run), Editor (the code's colours, font,
+size, tabs, wrapping, completion and lint, for notes, cells and other files; a note's text always
+wraps), Hub (the open hub's name, author, history and folder; with no hub open, Connect to a hub…)
+and Shortcuts.
 
 .. note:: Not written yet: a first note with a cell, a link and a property, with a screenshot.
