@@ -104,7 +104,7 @@ function Out({ o }: { o: Output }) {
   const d = o.data;
   // a picture shows itself; HTML from a runtime is not trusted in the page, its text stands in
   if (d["image/png"]) return <div className="screen"><img alt={d["text/plain"] ?? "image"} src={`data:image/png;base64,${d["image/png"]}`} /></div>;
-  if (d["image/svg+xml"]) return <div className="screen light"><img alt={d["text/plain"] ?? "image"} src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(d["image/svg+xml"])}`} /></div>;
+  if (d["image/svg+xml"]) return <div className="screen paper pb-paper-light"><img alt={d["text/plain"] ?? "image"} src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(d["image/svg+xml"])}`} /></div>;
   return <pre className="val">{d["text/plain"] ?? ""}</pre>;
 }
 
@@ -119,7 +119,7 @@ export function CellView({ cell, n, run, sealed, look, onRun, onStop }: { cell: 
         {run?.state === "running" && <span className="runs"><Spinner size={12} /> running</span>}
         {run?.state === "queued" && <span>queued</span>}
         {run?.ms !== undefined && !busy && <span title={run.ran}>· {run.ms < 1000 ? `${run.ms} ms` : `${(run.ms / 1000).toFixed(1)} s`} · {run.ran ? new Date(run.ran).toTimeString().slice(0, 5) : ""}</span>}
-        <span className="bend">
+        <span className="row-end">
           {busy ? <Key size="sm" icon="debug-stop" onClick={onStop} title="Stop (restarts the session if it doesn't stop)">Stop</Key>
             : <Key size="sm" kind="quiet" icon="play" onClick={onRun} disabled={sealed} title={sealed ? "A sealed note's cells keep their outputs" : "Run in the hub's session"}>Run</Key>}
         </span>

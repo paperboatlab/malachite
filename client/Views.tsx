@@ -57,10 +57,10 @@ export function ViewsPage({ items, onOpen, ask, fail }: { items: Item[]; onOpen:
 
   return (
     <Panel name={view.name} count={`${shown.length} notes · ${view.path ?? "not saved"}`} className="views"
-      head={<span className="tools">
+      tools={<>
         {!view.path && <Key size="sm" onClick={() => ask("Save view", view.name === DEFAULT.name && views.length ? "" : view.name, "Save", save)}>Save view</Key>}
         <MenuChip label="Views" menu={picker}>Views<Icon name="chevron-down" size={12} /></MenuChip>
-      </span>}>
+      </>}>
       <div className="vbar">
         {Object.entries(view.filter).map(([k, v]) => (
           <MenuChip key={k} label={`Filter ${k}`} className="chip set" menu={[
@@ -69,12 +69,12 @@ export function ViewsPage({ items, onOpen, ask, fail }: { items: Item[]; onOpen:
           ]}><em>{k}</em>{v}<Icon name="chevron-down" size={12} /></MenuChip>
         ))}
         <MenuChip label="Add a filter" className="chip add" menu={keys.filter((k) => !(k in view.filter)).map((k): MenuEntry => ({ id: k, label: k, run: () => { const v = valuesIn(notes, k)[0]; if (v) setFilter(k, v); } }))}>Filter</MenuChip>
-        <span className="bend">
+        <span className="row-end">
           <MenuChip label="Group by" className="chip" menu={keys.map((k): MenuEntry => ({ id: k, label: k, checked: k === view.group, run: () => update({ group: k, columns: [] }) }))}><em>group by</em>{view.group}<Icon name="chevron-down" size={12} /></MenuChip>
           <Segmented label="Show as" value={view.show} onChange={(show) => update({ show })} options={SHOWS} />
         </span>
       </div>
-      {shown.length === 0 ? <div className="empty"><p>No note matches this view.</p></div>
+      {shown.length === 0 ? <p className="empty-state">No note matches this view.</p>
         : view.show === "board" ? <Board items={shown} view={view} onOpen={onOpen} onMove={(p, v) => api.prop(p, view.group, v).catch(fail)} />
         : view.show === "list" ? <List items={shown} onOpen={onOpen} />
         : <Timeline items={shown} view={view} onOpen={onOpen} />}
@@ -138,7 +138,7 @@ function List({ items, onOpen }: { items: Item[]; onOpen: (p: string) => void })
 
 function Timeline({ items, view, onOpen }: { items: Item[]; view: View; onOpen: (p: string) => void }) {
   const rows = items.map((i) => ({ i, s: dayOf(i, view.date), e: view.until ? dayOf(i, view.until) : null })).filter((r): r is { i: Item; s: number; e: number | null } => r.s !== null);
-  if (!rows.length) return <div className="empty"><p>No note here has a {view.date} date.</p></div>;
+  if (!rows.length) return <p className="empty-state">No note here has a {view.date} date.</p>;
   const now = new Date(), today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   const lo = Math.min(today, ...rows.map((r) => r.s)) - DAY, hi = Math.max(today, ...rows.map((r) => r.e ?? r.s)) + 2 * DAY;
   const n = Math.round((hi - lo) / DAY), pct = (d: number) => ((d - lo) / (hi - lo)) * 100;
