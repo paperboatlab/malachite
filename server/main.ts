@@ -185,6 +185,7 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
         }
         // About: the hub format and Paperboat's version (null: not installed); never starts paperboatd
         case "GET /api/about": return send(res, 200, { format: SCHEMA, paperboat: await paperboatVersion() });
+        case "POST /api/launcher": { await paperboat(["launcher", "--page", "runtimes"]); return send(res, 200, {}); }   // Manage runtimes… (paperboat#69)
         case "GET /api/apps": return send(res, 200, await installedApps().catch(() => []));
       }
       const { hub, history, index, sessions, saveSoon, holdSave } = need();

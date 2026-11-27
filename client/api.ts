@@ -78,6 +78,8 @@ export const api = {
   run: (p: string, hash: string) => call<Run>("POST", "/api/run", { path: p, hash }),
   interrupt: (lang: Lang) => call("POST", "/api/interrupt", { lang }),
   restart: (lang: Lang) => call("POST", "/api/restart", { lang }),
+  /** Manage runtimes…: the Paperboat Launcher on its Runtimes page. */
+  manageRuntimes: () => call("POST", "/api/launcher", {}),
   runtimes: () => call<Peek>("GET", "/api/runtimes"),
   ask: (lang: Lang, op: string, args: Record<string, unknown>) => call<unknown>("POST", "/api/ask", { lang, op, args }),
   /** A file's bytes; `v` (its mtime) makes a changed file load again. */

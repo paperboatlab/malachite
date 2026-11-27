@@ -553,6 +553,7 @@ export function App() {
     { id: "note.graph", label: "Show in graph", menu: "note", group: "note", ...needNote(), run: () => note && actions.graph(note.path) },
     { id: "note.jl", label: "Restart the Julia session", menu: "note", group: "sessions", ...noHub, run: () => { api.restart("julia").catch(fail); } },
     { id: "note.py", label: "Restart the Python session", menu: "note", group: "sessions", ...noHub, run: () => { api.restart("python").catch(fail); } },
+    { id: "note.runtimes", label: "Manage runtimes…", menu: "note", group: "sessions", icon: "a-runtimes", run: () => { api.manageRuntimes().catch(fail); } },
     { id: "note.trash", label: "Show the trash", menu: "note", group: "trash", ...noHub, run: () => { setPage("notes"); setHideL(false); setTrashOpen(true); } },
     { id: "note.empty", label: "Empty the trash…", menu: "note", group: "trash", ...noHub,
       run: () => setAsk({ title: "Empty the trash?", note: "Everything in it leaves the hub for good; it can't be restored.", danger: true, ok: "Empty trash", run: () => api.emptyTrash().then(() => setTrashVersion((n) => n + 1), fail) }) },
