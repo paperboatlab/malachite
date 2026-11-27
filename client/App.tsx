@@ -28,6 +28,7 @@ import { Ev, LinksCard, Runtimes } from "./Side.tsx";
 import { HubGraph, hubLinks } from "./Graph.tsx";
 import { ViewsPage } from "./Views.tsx";
 import { TrashList } from "./Trash.tsx";
+import { NOTE_SIZES, useNoteSize } from "./noteSize.ts";
 
 declare const __VERSION__: string, __COMMIT__: string;   // scripts/build.ts
 /** What Malachite ships beyond the kit (the kit names its own: React, CodeMirror, the canvas…). */
@@ -75,7 +76,9 @@ export function App() {
   // ponytail: in this browser's localStorage, as Julix's; the shared settings file once Malachite has a ConfigStore
   const [editor, setEditor] = useEditorSettings(undefined, "malachite.editor");
   const look: CodeLook = useMemo(() => ({ settings: editor, appTheme: shown }), [editor, shown]);
-  const prose = useMemo(() => ({ ...editor, wrap: true }), [editor]);   // a note's text always wraps
+  const noteSize = useNoteSize();   // the note text's size (the status bar's − 100 % +, Ctrl = and Ctrl -)
+  // a note's text always wraps, at the note text's size
+  const prose = useMemo(() => ({ ...editor, wrap: true, fontSize: editor.fontSize * noteSize.size, lineHeight: Math.round(editor.lineHeight * noteSize.size) }), [editor, noteSize.size]);
   const [ws, setWs] = useState<Workspace | null | undefined>(undefined);   // undefined: not asked yet; null: the Start page
   const [home, setHome] = useState<string>();
   const [recent, setRecent] = useState<RecentEntry[]>([]);   // $PAPERBOAT_HOME/recent.json, every app's
@@ -485,6 +488,10 @@ export function App() {
     { id: "view.files", label: "Files", menu: "view", group: "panels", shortcut: "Ctrl B", chord: { key: "b", ctrl: true }, checked: !!ws && !hideL, ...noHub, run: () => setHideL((h) => !h) },
     { id: "view.links", label: "Links", menu: "view", group: "panels", shortcut: "Ctrl Alt B", chord: { key: "b", ctrl: true, alt: true }, checked: !!ws && !hideR, ...noHub, run: () => setHideR((h) => !h) },
     ...(["read", "live", "edit"] as Mode[]).map((m): Command => ({ id: `view.${m}`, label: m === "edit" ? "Edit the Markdown" : m[0].toUpperCase() + m.slice(1), menu: "view", group: "mode", checked: !!note && mode === m, ...needNote(), run: () => setMode(m) })),
+    { id: "view.bigger", label: "Bigger note text", menu: "view", group: "size", shortcut: "Ctrl =", chord: { key: "=", ctrl: true }, run: noteSize.bigger },
+    { id: "view.bigger+", label: "Bigger note text", menu: "keys", group: "size", chord: { key: "+", ctrl: true, shift: true }, quiet: true, run: noteSize.bigger },   // Ctrl + (a shifted =)
+    { id: "view.smaller", label: "Smaller note text", menu: "view", group: "size", shortcut: "Ctrl -", chord: { key: "-", ctrl: true }, run: noteSize.smaller },
+    { id: "view.usual", label: "Note text at its usual size", menu: "view", group: "size", shortcut: "Ctrl 0", chord: { key: "0", ctrl: true }, run: noteSize.usual },
     { id: "view.theme", label: "Theme", menu: "view", group: "theme", quiet: true, run: () => {},
       sub: THEMES.map((t): MenuEntry => ({ id: `theme.${t}`, label: t[0].toUpperCase() + t.slice(1), checked: theme === t, run: () => changeTheme(t) })) },
     ...noteMenu().flatMap((m): Command[] => (typeof m === "object" && "run" in m ? [{ id: `note.${m.id}`, label: m.label, menu: "note", group: "cells", ...needNote(mode !== "read" && !m.disabled), run: m.run }] : [])),
@@ -570,7 +577,7 @@ export function App() {
             </Panel>
 
             <div className="bay">
-            <section className="panel note" aria-label="Note">
+            <section className="panel note" aria-label="Note" style={{ "--note-scale": noteSize.size } as React.CSSProperties}>
               <EditorTabs label="Open notes" current={current} onShow={(p) => open(p)} onClose={(p) => closeTabs([p])} menu={tabItems}
                 onUnpin={(p) => setPinned((s) => new Set([...s].filter((x) => x !== p)))}
                 tabs={strip.map((p) => ({ id: p, label: nameOf(p).replace(/\.md$/, ""), pinned: pinned.has(p), dirty: p === current && draft !== null }))} />
@@ -610,7 +617,13 @@ export function App() {
                     api.openIn(app, current, copy).then((r) => { window.open(r.url, label);  /* named: the Launcher opens it as that app's window */ show({ title: copy ? `Copied to ${label}` : `Opened in ${label}`, detail: copy ? `${r.folder}/${r.file} · not in the hub` : `${label} works in ${hub?.name ?? "the hub"}`, state: "done" }); }, fail); }} />}
               </div>
               {note && <div className="efoot"><span>markdown · {note.body.split(/\s+/).filter(Boolean).length} words · {note.cells.length} cells</span>
-                <Segmented label="View" value={mode} onChange={setMode} options={[{ value: "read", label: "Read" }, { value: "live", label: "Live" }, { value: "edit", label: "Edit" }]} /><span>{links?.backlinks.length ?? 0} backlinks · {links?.links.length ?? 0} links</span></div>}
+                <Segmented label="View" value={mode} onChange={setMode} options={[{ value: "read", label: "Read" }, { value: "live", label: "Live" }, { value: "edit", label: "Edit" }]} /><span className="efoot-end">
+                  <span className="note-size" role="group" aria-label="Note text size">
+                    <Key size="sm" kind="quiet" onClick={noteSize.smaller} disabled={noteSize.size === NOTE_SIZES[0]} title="Smaller note text (Ctrl -)" aria-label="Smaller note text">−</Key>
+                    <button type="button" className="note-size-now" onClick={noteSize.usual} title="Note text at its usual size (Ctrl 0)">{Math.round(noteSize.size * 100)} %</button>
+                    <Key size="sm" kind="quiet" onClick={noteSize.bigger} disabled={noteSize.size === NOTE_SIZES.at(-1)} title="Bigger note text (Ctrl =)" aria-label="Bigger note text">+</Key>
+                  </span>
+                  <span>{links?.backlinks.length ?? 0} backlinks · {links?.links.length ?? 0} links</span></span></div>}
             </section>
             </div>
 
