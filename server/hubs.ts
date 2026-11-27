@@ -4,7 +4,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { HubError, peek } from "./hub.ts";
+import { HubError, exampleAbove, exampleAt, paperboatHome, peek } from "./hub.ts";
+
+export { paperboatHome };
 
 /** Where a hub's folder is: this computer, or a folder a sync client's desktop app keeps (v1: Paperboat
  *  syncs nothing itself, as Obsidian; the history travels as one bundle per machine, so that is safe). */
@@ -30,13 +32,6 @@ export type HubInfo = Known & { name: string; shown: string; missing?: boolean; 
 /** A path as people read it: the home folder as ~. */
 export const tilde = (p: string) => (p === os.homedir() || p.startsWith(os.homedir() + path.sep) ? `~${p.slice(os.homedir().length)}` : p);
 
-/** Paperboat's home, as the paperboat CLI finds it (src/lib/paths.cpp). */
-export function paperboatHome(): string {
-  const env = process.env;
-  if (env.PAPERBOAT_HOME) return env.PAPERBOAT_HOME;
-  if (process.platform === "win32" && env.LOCALAPPDATA) return path.join(env.LOCALAPPDATA, "paperboat");
-  return path.join(env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"), "paperboat");
-}
 const listFile = () => path.join(paperboatHome(), "hubs.toml");
 
 /** Where new hubs go unless told (REBRAND Settings › Malachite › Hubs). */
@@ -47,6 +42,8 @@ export const defaultFolder = (name: string) => {
   return path.join(os.homedir(), "Documents", "paperboat", name);
 };
 
+/** The hubs this machine knows. An example opened where it is is none of them (a copy of it is): an entry an
+ *  earlier Malachite wrote for one leaves the list here, and the file with it. */
 export function known(): Known[] {
   const f = listFile();
   if (!fs.existsSync(f)) return [];
@@ -57,7 +54,9 @@ export function known(): Known[] {
     const m = /^\s*(\w+)\s*=\s*"((?:[^"\\]|\\.)*)"\s*$/.exec(line);
     if (cur && m) (cur as Record<string, string>)[m[1]] = JSON.parse(`"${m[2]}"`);
   }
-  return out.filter((k) => k.id && k.path).map((k) => ({ ...k, place: k.place === "google-drive" ? "google-drive" : "local" }));
+  const all = out.filter((k) => k.id && k.path), list = all.filter((k) => !exampleAt(k.path));
+  if (list.length < all.length) save(list);
+  return list.map((k) => ({ ...k, place: k.place === "google-drive" ? "google-drive" : "local" }));
 }
 
 function save(list: Known[]) {
@@ -70,8 +69,9 @@ function save(list: Known[]) {
   fs.renameSync(tmp, f);
 }
 
-/** Adds a hub, or notes where it is now (opened from another folder after a move). */
+/** Adds a hub, or notes where it is now (opened from another folder after a move); an example where it is never. */
 export function remember(id: string, root: string, place: Place = "local") {
+  if (exampleAt(root)) return;
   const list = known().filter((k) => k.id !== id && path.resolve(k.path) !== path.resolve(root));
   save([...list, { id, path: root, place }].sort((a, b) => a.path.localeCompare(b.path)));
 }
@@ -146,14 +146,18 @@ function writeJson(name: string, value: unknown) {
   fs.renameSync(tmp, f);
 }
 
-/** Everything opened, newest first, every app's (each shows its own files and every folder and hub). */
+/** Everything opened, newest first, every app's (each shows its own files and every folder and hub). An example
+ *  hub, or a note in one, that an earlier Malachite put there is left out (another app's own files stay theirs). */
 export function recent(): RecentEntry[] {
   const list = readJson("recent.json")?.recent;
-  return (Array.isArray(list) ? list : []).filter((e: RecentEntry) => !!e && ["folder", "hub", "file"].includes(e.kind) && typeof e.path === "string" && e.path !== "" && Number.isFinite(e.at)).slice(0, RECENT_MAX);
+  return (Array.isArray(list) ? list : []).filter((e: RecentEntry) => !!e && ["folder", "hub", "file"].includes(e.kind) && typeof e.path === "string" && e.path !== "" && Number.isFinite(e.at))
+    .filter((e: RecentEntry) => !((e.kind === "hub" || e.app === "malachite") && exampleAbove(e.path))).slice(0, RECENT_MAX);
 }
 
-/** Malachite opened this: first in the list, an older entry of the same kind and path gone. */
+/** Malachite opened this: first in the list, an older entry of the same kind and path gone. An example, or a
+ *  file in one, is not kept: it is no hub of the user's (paperboat example open finds it again). */
 export function addRecent(e: { kind: RecentEntry["kind"]; path: string; hub?: string }) {
+  if (exampleAbove(e.path)) return;
   const entry: RecentEntry = { ...e, app: "malachite", at: Math.floor(Date.now() / 1000) };
   writeJson("recent.json", { version: 1, recent: [entry, ...recent().filter((x) => x.kind !== e.kind || x.path !== e.path)].slice(0, RECENT_MAX) });
 }

@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { bodyHash, join, split } from "./note.ts";
 
 export type Entry = { path: string; name: string; kind: "dir" | "file"; size?: number; mtime?: number; children?: Entry[] };
@@ -33,6 +33,32 @@ export const newId = (prefix = "n") => `${prefix}_${Date.now().toString(36)}${ra
 export const configFile = (root: string) => path.join(root, ".malachite", "hub.toml");
 const oldConfigFile = (root: string) => path.join(root, "hub.toml");
 
+/** Paperboat's home, as the paperboat CLI finds it (src/lib/paths.cpp). */
+export function paperboatHome(): string {
+  const env = process.env;
+  if (env.PAPERBOAT_HOME) return env.PAPERBOAT_HOME;
+  if (process.platform === "win32" && env.LOCALAPPDATA) return path.join(env.LOCALAPPDATA, "paperboat");
+  return path.join(env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"), "paperboat");
+}
+
+const real = (p: string) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+/** An example of paperboat-examples where it is (paperboat#75: `paperboat example open` opens it in place), or
+ *  null: `<examples>/<group>/<example>/` with its `example.toml`, `<examples>` being `$PAPERBOAT_EXAMPLES_DIR`, a
+ *  checkout (its `golden.py`) or GitHub's copy (`<home>/cache/examples`), as the CLI's `examples_root` finds them.
+ *  Its id is the CLI's: `<group>/<example>`. A copy of one (the banner's Copy) is a folder of the user's: none. */
+export function exampleAt(dir: string): { id: string } | null {
+  const d = real(dir), top = path.dirname(path.dirname(d));
+  if (!fs.existsSync(path.join(d, "example.toml")) || top === path.dirname(top)) return null;
+  const roots = [process.env.PAPERBOAT_EXAMPLES_DIR, path.join(paperboatHome(), "cache", "examples")].filter((r): r is string => !!r).map(real);
+  if (!roots.includes(top) && !fs.existsSync(path.join(top, "golden.py"))) return null;
+  return { id: `${path.basename(path.dirname(d))}/${path.basename(d)}` };
+}
+/** The example a path lies in (the folder or one above it), or null. */
+export function exampleAbove(p: string): { id: string; root: string } | null {
+  for (let d = path.resolve(p); path.dirname(d) !== d; d = path.dirname(d)) { const x = exampleAt(d); if (x) return { ...x, root: real(d) }; }
+  return null;
+}
+
 /** A folder's hub settings without opening it (no file is written), or null when it isn't a hub. */
 export function peek(root: string): (Partial<HubConfig> & { schema: number }) | null {
   for (const f of [configFile(root), oldConfigFile(root)]) {
@@ -53,10 +79,27 @@ export function detach(root: string) {
 export class Hub {
   readonly root: string;
   conf: HubConfig;
+  /** An example where it is (paperboat-examples): read-only. Nothing is written in its folder: every change is
+   *  refused (403), and what Malachite keeps of it (the log, the cells' outputs) goes to `state`. */
+  readonly example: { id: string } | null;
+  /** Where Malachite keeps the hub's own state: `.malachite/` in the hub; an example's outside it, in
+   *  `<home>/cache/malachite/examples/<its id>/`. */
+  readonly state: string;
   onEvent: (e: Event) => void = () => {};
 
   constructor(root: string) {
     this.root = fs.realpathSync(root);
+    this.example = exampleAt(this.root);
+    this.state = this.example ? path.join(paperboatHome(), "cache", "malachite", "examples", ...this.example.id.split("/").map((s) => s.replace(/[^\w.-]+/g, "_"))) : path.join(this.root, ".malachite");
+    if (this.example) {   // as it is: its settings read, never written (nor upgraded)
+      const c = peek(this.root) ?? { schema: SCHEMA };
+      if (c.schema > SCHEMA) throw new HubError(`this hub has schema ${c.schema}; this Malachite reads ${SCHEMA}. Update Malachite.`);
+      this.conf = {
+        id: c.id || `h_${createHash("sha256").update(this.root).digest("hex").slice(0, 12)}`, name: c.name || path.basename(this.root), schema: SCHEMA,
+        author: os.userInfo().username, created: c.created || "", keep: "always", ignore: c.ignore ?? ".malachite/out/ out/ *.tmp",
+      };
+      return;
+    }
     const file = configFile(this.root), old = oldConfigFile(this.root);
     const fresh = !fs.existsSync(file) && !fs.existsSync(old);
     let upgraded = false;
@@ -100,6 +143,7 @@ export class Hub {
 
   /** One setting changed (the Settings pane, `paperboat hub config`). */
   set(key: HubKey, value: string) {
+    this.writable();
     const v = value.trim();
     if (key === "keep" && !(KEEP as readonly string[]).includes(v)) throw new HubError(`keep is one of ${KEEP.join(", ")}`);
     if ((key === "name" || key === "author") && (!v || /[\n"]/.test(v))) throw new HubError(`${key} can't be empty or hold quotes`);
@@ -117,6 +161,11 @@ export class Hub {
     const lines = ["# A Malachite hub (github.com/paperboatlab/malachite). Set from its Settings or `paperboat hub config`."]
       .concat((Object.keys(c) as (keyof HubConfig)[]).map((k) => `${k} = ${typeof c[k] === "number" ? c[k] : JSON.stringify(c[k])}`));
     this.put(file, lines.join("\n") + "\n");
+  }
+
+  /** Refuses a change to an example (403): it is read as it is; its banner's Copy makes one to change. */
+  writable() {
+    if (this.example) throw new HubError(`${this.name} is an example: copy it to change it`, 403);
   }
 
   /** An absolute path for a hub-relative one, or an error if it leaves the hub. */
@@ -194,6 +243,7 @@ export class Hub {
 
   /** Writes a note; a sealed one refuses (corrections are annotations or a new note). */
   write(rel: string, text: string) {
+    this.writable();
     const abs = this.resolve(rel);
     if (fs.existsSync(abs) && split(fs.readFileSync(abs, "utf8")).props.sealed) throw new HubError(`${rel} is sealed`, 409);
     if (split(text).props.sealed) throw new HubError("a note is sealed with Seal, not by writing", 409);
@@ -203,6 +253,7 @@ export class Hub {
 
   /** One front matter property set (a board card moved to a column), or removed with "". */
   setProp(rel: string, key: string, value: string) {
+    this.writable();
     if (!/^[A-Za-z_][\w-]*$/.test(key) || ["id", "sealed", "sealed_by", "hash"].includes(key)) throw new HubError(`${key} is not a property to set`, 400);
     const abs = this.resolve(rel), { props, body } = split(fs.readFileSync(abs, "utf8"));
     if (props.sealed) throw new HubError(`${rel} is sealed`, 409);
@@ -222,6 +273,7 @@ export class Hub {
 
   /** A new note with its id, time and author set by the app; a free name if this one is taken. */
   create(dir: string, title: string, kind = "note"): string {
+    this.writable();
     const base = title.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "") || "untitled";
     let rel = path.posix.join(dir, `${base}.md`);
     for (let n = 2; fs.existsSync(this.resolve(rel)); n++) rel = path.posix.join(dir, `${base}-${n}.md`);
@@ -234,11 +286,13 @@ export class Hub {
   }
 
   mkdir(rel: string) {
+    this.writable();
     fs.mkdirSync(this.resolve(rel), { recursive: true });
     this.log("folder.created", rel);
   }
 
   rename(from: string, to: string) {
+    this.writable();
     const a = this.resolve(from), b = this.resolve(to);
     if (a === this.root) throw new HubError("the hub itself can't move");
     if (fs.existsSync(b)) throw new HubError(`${to} exists`, 409);
@@ -251,6 +305,7 @@ export class Hub {
   /** To the hub's trash: `.malachite/trash/<id>/<path>`, with `trashed.json` saying what, from where, who and
    *  when, so it can come back. */
   trash(rel: string) {
+    this.writable();
     const abs = this.resolve(rel);
     if (abs === this.root) throw new HubError("the hub itself can't go to the trash");
     const kind = fs.statSync(abs).isDirectory() ? "folder" : "file";
@@ -285,6 +340,7 @@ export class Hub {
 
   /** Back where it was; if something new has that name, beside it as "<name> (restored)". Returns its path. */
   restore(id: string): string {
+    this.writable();
     const t = this.trashed().find((x) => x.id === id);
     if (!t) throw new HubError(`no ${id} in the trash`, 404);
     let to = t.path;
@@ -299,6 +355,7 @@ export class Hub {
 
   /** Gone for good: one entry, or (no id) the whole trash. */
   purge(id?: string) {
+    this.writable();
     const all = this.trashed(), gone = id ? all.filter((x) => x.id === id) : all;
     if (id && !gone.length) throw new HubError(`no ${id} in the trash`, 404);
     for (const t of gone) fs.rmSync(this.trashDir(t.id), { recursive: true, force: true });
@@ -308,6 +365,7 @@ export class Hub {
 
   /** Seal: freeze the body, record who, when and its hash. Afterwards the note only takes annotations. */
   seal(rel: string) {
+    this.writable();
     const abs = this.resolve(rel);
     const { props, body } = split(this.read(rel));
     if (props.sealed) throw new HubError(`${rel} is already sealed`, 409);
@@ -320,7 +378,7 @@ export class Hub {
    *  (a sync client would keep one and make a conflict copy of the other). */
   log(action: string, target?: string, details?: Record<string, unknown>) {
     const e: Event = { time: new Date().toISOString(), actor: this.author, action, ...(target ? { target } : {}), ...(details ? { details } : {}) };
-    const dir = path.join(this.root, ".malachite", "log", machine());
+    const dir = path.join(this.state, "log", machine());
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, `${e.time.slice(0, 7)}.jsonl`), JSON.stringify(e) + "\n");
     this.onEvent(e);
@@ -328,7 +386,7 @@ export class Hub {
 
   /** The newest events first, optionally for one file. A damaged line is shown, not repaired. */
   events(limit = 200, target?: string): (Event | { damaged: string })[] {
-    const dir = path.join(this.root, ".malachite", "log");
+    const dir = path.join(this.state, "log");
     if (!fs.existsSync(dir)) return [];
     const machines = fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
     const months = [...new Set(machines.flatMap((m) => fs.readdirSync(path.join(dir, m)).filter((f) => MONTH.test(f))))].sort().reverse();

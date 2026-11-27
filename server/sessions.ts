@@ -1,7 +1,10 @@
 // Cells run in sessions: one session lease per language for the hub (paperboat-runtime/0 session mode:
 // a live namespace shared by the hub's notes, as a Jupyter kernel is). Malachite runs no code itself
 // (pb#415 §9): it asks paperboatd for the lease and speaks the protocol. Outputs are kept beside the
-// note in `.malachite/out/<note id>/<cell hash>.json` (decision 16), with the runtime that made them.
+// note in `.malachite/out/<note id>/<cell hash>.json` (decision 16), with the runtime that made them; an
+// example's in its state folder outside it (Hub.state). A container mounts the project read-only (paperboatd's
+// default policy: no `writable_project`), so a cell can't write in the hub's folder; the native backend has no
+// sandbox and can.
 import fs from "node:fs";
 import path from "node:path";
 import { Control, type Lease } from "./control.ts";
@@ -99,7 +102,8 @@ export class Sessions {
     this.emit({ type: "session", lang, state: "stopped" });
   }
 
-  outDir(noteId: string) { return path.join(this.hub.root, ".malachite", "out", safe(noteId)); }
+  /** `.malachite/out/<note id>/` in the hub; an example's outside it (`Hub.state`), so a run leaves it as it is. */
+  outDir(noteId: string) { return path.join(this.hub.state, "out", safe(noteId)); }
 
   /** The saved outputs of a note's cells, by cell hash. */
   outputs(noteId: string): Record<string, Run> {

@@ -10,8 +10,9 @@ import { EDITABLE, FileGlyph, mediaOf, typeOf } from "./files.tsx";
 
 const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 
-export function MediaEmbed({ path, alt, version, onSaved, fail }: {
-  path: string | null; alt: string; version?: number; onSaved?: (p: string) => void; fail: (e: unknown) => void;
+/** `readOnly`: no Edit (an example where it is). */
+export function MediaEmbed({ path, alt, version, onSaved, fail, readOnly }: {
+  path: string | null; alt: string; version?: number; onSaved?: (p: string) => void; fail: (e: unknown) => void; readOnly?: boolean;
 }) {
   const [editing, setEditing] = useState(false), [stamp, setStamp] = useState(0);
   const fig = useRef<HTMLElement>(null);
@@ -19,7 +20,7 @@ export function MediaEmbed({ path, alt, version, onSaved, fail }: {
   const kind = mediaOf(path), src = api.raw(path, (version ?? 0) + stamp), name = base(path);
   if (kind === "video" || kind === "audio") return <div className="media"><MediaPlayer src={src} kind={kind} title={alt || name} /></div>;
   if (kind !== "image") return <span className="embed-card" data-wl={path}><b>{name}</b><small>a file in the hub</small></span>;
-  const type = EDITABLE[typeOf(path)];
+  const type = readOnly ? undefined : EDITABLE[typeOf(path)];
   return (
     <figure ref={fig} className="media img">
       <img src={src} alt={alt || name} loading="lazy" />

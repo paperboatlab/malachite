@@ -22,7 +22,8 @@ export type HubConf = { id: string; name: string; schema: number; author: string
 export type Place = "local" | "google-drive" | "onedrive" | "dropbox" | "icloud";
 export type KnownHub = { id: string; path: string; shown: string; place: Place; name: string; missing?: boolean; conflicts?: string[]; notes?: number };
 /** What Malachite works in (the kit's `Workspace`): a hub, or nothing (the Start page). */
-export type Workspace = { kind: "hub"; root: string; name: string; hub: string };
+/** `example`: an example opened where it is (paperboat-examples), read-only: the server refuses every change. */
+export type Workspace = { kind: "hub"; root: string; name: string; hub: string; example?: { id: string } };
 /** Opening a workspace: the hub, and the file to open in it (a file opened from outside). */
 export type Entered = { workspace: Workspace | null; open?: string };
 export type Version = { id: string; time: string; author: string; what: string };
@@ -53,7 +54,7 @@ export const api = {
   hubForget: (id: string) => call("POST", "/api/hubs/remove", { id }),
   apps: () => call<{ name: string; label: string }[]>("GET", "/api/apps"),
   openIn: (app: string, p: string, copy: boolean) => call<{ url: string; folder: string; file: string }>("POST", "/api/apps/open", { app, path: p, copy }),
-  versions: (p: string) => call<{ ok: boolean; versions: Version[] }>("GET", `/api/versions?path=${q(p)}`),
+  versions: (p: string) => call<{ ok: boolean; example?: boolean; versions: Version[] }>("GET", `/api/versions?path=${q(p)}`),
   restoreVersion: (id: string, p: string) => call<{ id: string | null }>("POST", "/api/versions/restore", { id, path: p }),
   about: () => call<{ format: number; paperboat: string | null }>("GET", "/api/about"),
   tree: () => call<Entry[]>("GET", "/api/tree"),

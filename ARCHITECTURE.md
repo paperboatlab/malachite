@@ -33,6 +33,17 @@ flowchart LR
   read/write (atomic), create (id, time, author set here), one property set (a board move), move, the trash (`.malachite/trash/<id>/` with `trashed.json`: list,
   restore beside a newcomer, delete for good, empty), seal, and
   the activity log (`.malachite/log/<machine>/YYYY-MM.jsonl`: a file per machine, so a sync never conflicts).
+- **Examples** (paperboat#75): an example of paperboat-examples opened where it is is read-only. `hub.ts`
+  `exampleAt` knows one from where it lies, as the CLI's `examples_root` does: `<examples>/<group>/<example>/`
+  with its `example.toml`, `<examples>` being `$PAPERBOAT_EXAMPLES_DIR`, a checkout (`golden.py`) or GitHub's copy
+  (`<home>/cache/examples`); its id is `<group>/<example>`, and a copy of it (the banner's Copy) is none. Its
+  `Hub` writes nothing in its folder: every change refuses (`writable()`, 403: rename, move, trash, seal, a
+  property, a setting, a save, an upload, a version restored), its settings are read and never upgraded, its
+  state (`Hub.state`: the log, the cells' outputs) is `<home>/cache/malachite/examples/<id>/` instead of
+  `.malachite/`, its `History` is off, no `serving.pid`, and it joins neither `hubs.toml` nor `recent.json`
+  (an entry an earlier Malachite wrote leaves both when read). `GET /api/workspace` says `example: { id }`: the
+  page shows the banner and is read-only (editors, file menu, tree drag and drop, Views, Settings › Hub), however
+  it was opened. Cells run with the project mounted read-only (paperboatd's default policy).
 - `server/hubs.ts`: the hubs this machine knows, `$PAPERBOAT_HOME/hubs.toml` (id, path, place): every
   app and the Launcher read it; a hub is found by its id, so a rename or a move keeps it.
   Cloud hubs v1 are synced folders, as in Obsidian: the provider's desktop app keeps the folder in sync,

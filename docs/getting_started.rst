@@ -14,10 +14,12 @@ A folder named on the command line opens as a hub: its settings are written on f
 
 To try it on an example hub, press Ctrl K and pick **Open example: Tank Lab** (or run
 ``paperboat example open malachite/tank-lab``): it opens where it is, in a new window, with a line at the
-top saying it is an example. Run it as it is, or click **copy it to <folder>** to change it: the copy goes
-next to the hub you opened it from (with no hub open, Malachite asks for a folder), becomes a hub of its own
-and opens in a new window. GitHub's copy of an example is replaced after a day, so changes there aren't kept;
-the line says so. The examples are those of
+top saying it is an example. An example is read-only: its notes don't take typing, and nothing saves,
+renames, moves, deletes or adds a file in it; its cells run, and their outputs are kept outside it (in
+Paperboat's cache), so the example stays exactly as it came. It keeps no versions and isn't added to the
+hubs Paperboat knows. Click **copy it to <folder>** to change it: the copy goes next to the hub you opened
+it from (with no hub open, Malachite asks for a folder), becomes a hub of your own and opens in a new window.
+The examples are those of
 `paperboat-examples <https://github.com/paperboatlab/paperboat-examples>`_ that Malachite opens; the list
 needs the Paperboat CLI.
 
