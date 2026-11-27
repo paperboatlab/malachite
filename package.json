@@ -2,7 +2,7 @@
   "name": "malachite",
   "private": true,
   "version": "0.1.0",
-  "description": "Paperboat Malachite: an engineering notebook",
+  "description": "Paperboat Malachite: the hub of your work, with notes and cells",
   "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
