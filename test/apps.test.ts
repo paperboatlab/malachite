@@ -12,6 +12,7 @@ const home = tmp("apps-home-"), bin = path.join(tmp("apps-bin-"), "paperboat");
 fs.writeFileSync(bin, `#!/bin/sh
 case "$1 $2" in
   "app list") echo '[{"name":"malachite","label":"Malachite","installed":{}},{"name":"julix","label":"Julix","installed":{}},{"name":"articula","label":"Articula","installed":null}]' ;;
+  "launcher --page") echo "$*" > "$(dirname "$0")/launcher-args"; echo '{}' ;;
   "app open") printf '{"id":"%s-1","url":"http://127.0.0.1:30473/","project":"%s"}' "$3" "$4" ;;
   *) echo '{"error":"no"}'; exit 2 ;;
 esac
@@ -37,5 +38,16 @@ test("a file another app draws: open it there on the hub, or copy it out of the 
     assert.equal((await post({ app: "julix", path: "scripts/fit.jl", copy: true })).json.file, "fit (2).jl", "a taken name gets a number");
     assert.equal((await post({ app: "articula", path: "scripts/fit.jl", copy: false })).status, 409, "not installed");
     assert.equal((await post({ app: "julix", path: "../outside.jl", copy: true })).status, 400, "paths stay in the hub");
+  } finally { server.close(); }
+});
+
+test("Manage runtimes…: the Launcher on its Runtimes page (paperboat#69)", async () => {
+  const { server } = serve(null, 0, new Control(path.join(home, "none.sock"), false));
+  await new Promise((r) => server.once("listening", r));
+  const port = (server.address() as import("node:net").AddressInfo).port;
+  try {
+    const r = await fetch(`http://127.0.0.1:${port}/api/launcher`, { method: "POST", headers: { "content-type": "application/json", origin: `http://127.0.0.1:${port}` }, body: "{}" });
+    assert.equal(r.status, 200);
+    assert.equal(fs.readFileSync(path.join(path.dirname(bin), "launcher-args"), "utf8").trim(), "launcher --page runtimes --json");
   } finally { server.close(); }
 });
