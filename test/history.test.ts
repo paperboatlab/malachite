@@ -69,6 +69,16 @@ test("changes in words", () => {
   assert.equal(describe(["M  log/2026-11.jsonl", "M  notes/a.md"]), "Edited notes/a.md", "the log is not news");
 });
 
+test("a new hub doesn't version what apps export into an out/ folder, until out/ leaves its ignore", () => on(tmp("pb-"), "lab", () => {
+  const hub = new Hub(tmp("hub-")), h = new History(hub);
+  for (const f of ["model/M.mo", "model/out/M.fmu", "out/run.csv"]) { fs.mkdirSync(path.dirname(path.join(hub.root, f)), { recursive: true }); fs.writeFileSync(path.join(hub.root, f), "x"); }
+  h.excludes(); h.save();
+  const tracked = () => execFileSync("git", ["ls-files"], { env: { ...process.env, GIT_DIR: h.gitDir, GIT_WORK_TREE: hub.root }, cwd: hub.root, encoding: "utf8" }).split("\n").filter(Boolean);
+  assert.deepEqual(tracked(), [".malachite/hub.toml", "model/M.mo"]);
+  hub.set("ignore", ".malachite/out/ *.tmp"); h.excludes(); h.save();
+  assert.deepEqual(tracked(), [".malachite/hub.toml", "model/M.mo", "model/out/M.fmu", "out/run.csv"]);
+}));
+
 test("what no tree shows is not versioned, even what was before", () => on(tmp("pb-"), "lab", () => {
   const hub = new Hub(tmp("hub-")), h = new History(hub);
   fs.writeFileSync(path.join(hub.root, "a.md"), "one\n");

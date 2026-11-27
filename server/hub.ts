@@ -62,7 +62,7 @@ export class Hub {
     this.conf = {
       id: c.id || newId("h"), name: c.name || path.basename(this.root), schema: SCHEMA, author: c.author || os.userInfo().username,
       created: c.created || new Date().toISOString(), keep: (KEEP as readonly string[]).includes(c.keep) ? (c.keep as HubConfig["keep"]) : "always",
-      ignore: c.ignore ?? ".malachite/out/ *.tmp",
+      ignore: c.ignore ?? ".malachite/out/ out/ *.tmp",   // out/: what apps export, made again from the hub; take it out to version it
     };
     if (fresh || upgraded || !c.id || Number(c.schema) !== SCHEMA) this.save();
     if (fresh) this.log("hub.created");
