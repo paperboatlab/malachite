@@ -20,10 +20,12 @@ export class Runtime {
   private sock: net.Socket;
   private constructor(sock: net.Socket) { this.sock = sock; }
 
-  /** Connects, retrying until the runtime listens (a first Julia start compiles), and waits for its hello. */
-  static async connect(socket: string, timeoutMs = 60_000): Promise<Runtime> {
+  /** Connects, retrying until the runtime listens (a first Julia start compiles), and waits for its hello;
+   *  `signal` stops the wait (the session was stopped, or its runtime ended). */
+  static async connect(socket: string, timeoutMs = 60_000, signal?: AbortSignal): Promise<Runtime> {
     const end = Date.now() + timeoutMs;
     for (;;) {
+      signal?.throwIfAborted();
       try {
         const s = await new Promise<net.Socket>((res, rej) => { const x = net.connect(socket); x.once("connect", () => { x.off("error", rej); res(x); }); x.once("error", rej); });
         const r = new Runtime(s);
@@ -31,9 +33,13 @@ export class Runtime {
         s.on("data", (d) => r.data(d));
         s.on("close", () => { for (const w of r.wait.values()) w.reject(new RuntimeError({ type: "closed", message: "the runtime ended" })); r.wait.clear(); r.onClose(); });
         s.on("error", () => {});
-        r.hello = await withTimeout(r.ready, Math.max(1000, end - Date.now()), "no hello from the runtime");
+        const stop = () => s.destroy();
+        signal?.addEventListener("abort", stop);
+        try { r.hello = await withTimeout(r.ready, Math.max(1000, end - Date.now()), "no hello from the runtime"); }
+        finally { signal?.removeEventListener("abort", stop); }
         return r;
       } catch (e) {
+        signal?.throwIfAborted();
         if (Date.now() > end) throw e;
         await new Promise((z) => setTimeout(z, 100));
       }

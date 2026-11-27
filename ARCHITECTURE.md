@@ -60,7 +60,9 @@ flowchart LR
 - `server/sessions.ts`: `Sessions`: one session lease per language for the hub; cells queue per
   language, run in their note's folder, and their outputs are written to
   `.malachite/out/<note id>/<cell hash>.json` with the runtime, image digest and backend that made them.
-  Interrupt goes through the daemon (SIGINT); no answer within 3 s restarts the session.
+  Interrupt answers at once: SIGINT through the daemon, and no answer within 3 s restarts the session; a
+  cell still waiting for its session stops the start. A start also stops when its lease's runtime ends,
+  instead of waiting out the connect.
 - `server/main.ts`: the HTTP server. The workspace is switched at runtime (`POST /api/workspace`: a known
   hub by id, a folder or a file by path, which opens the hub it lies in, `make` turning a plain folder into a
   hub, or nothing: the Start page); a plain folder answers 409 with `notHub`, as Malachite works in hubs
@@ -83,7 +85,7 @@ flowchart LR
   for the kit's tree), `Graph.tsx` (the hub graph and the local graph, the kit's note graph), `Trash.tsx` (the hub card's trash), `Media.tsx` (pictures, videos, sounds: the kit's player and image
   editor; Read draws them into `.media-slot`s, Live through the kit's `embeds`), `Views.tsx` and `views.ts`
   (board, list, timeline over `views/*.toml`), `Side.tsx` (the Links card, the
-  rows for the kit's runtimes key from `GET /api/runtimes`), `markdown.ts` (marked with wikilinks and embeds), `files.tsx`, `api.ts`.
+  rows for the kit's runtimes key from `GET /api/runtimes`), `markdown.ts` (marked with wikilinks, embeds and callouts), `callouts.ts` (the callout kinds: aliases, icon, colour role), `noteSize.ts` (the note text's size: the foot's − size +, Ctrl = and Ctrl -, `--note-scale` on the note card), `files.tsx`, `api.ts`.
 - **From the kit** (`@paperboatlab/ui`): the shell's parts (the bar `.win > .bar`, MenuBar and the command
   registry, WindowKeys, Rail, Panel, PanelsKey, Search, Menu, Dialog, Settings, ThemeSetting, ShortcutList, Toasts, Notifications,
   RuntimesKey), the one file workflow (`/workspace`: Start, WorkspaceWell, fileMenu, recentMenu, NotAHub,

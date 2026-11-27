@@ -20,6 +20,9 @@ export type Run = {
   runtime?: { name: string; version: string; backend: string; digest?: string; verified?: string };
 };
 type Session = { lease: Lease; rt: Runtime; cwd?: string };
+/** A session as it starts and runs: its lease is known before the runtime answers, and the start can be
+ *  stopped (an interrupt, a restart, the runtime ending) instead of waiting out the connect. */
+type Entry = { ready: Promise<Session>; abort: AbortController; lease?: string; session?: Session };
 
 /** Cells run in their note's folder, as Jupyter runs a notebook's (the daemon sets PAPERBOAT_PROJECT). */
 function chdir(lang: Lang, dir: string): string {
@@ -32,9 +35,10 @@ const safe = (id: string) => id.replace(/[^\w-]+/g, "_");
 export class NoSession extends Error {}
 
 export class Sessions {
-  private sessions = new Map<Lang, Promise<Session>>();
+  private sessions = new Map<Lang, Entry>();
   private queues = new Map<Lang, Promise<unknown>>();
   readonly running = new Map<Lang, Run>();
+  private where = new WeakMap<Run, { path: string; title: string }>();   // for the peek, never saved with the run
 
   private hub: Hub;
   private control: Control;
@@ -47,34 +51,51 @@ export class Sessions {
     control.onEvent = (e) => {
       this.emit({ type: "runtime", event: e });
       if (e.event === "runtime.exited" || e.event === "runtime.failed") {
-        for (const [lang, p] of this.sessions) p.then((s) => { if (s.lease.id === e.lease || s.lease.id === (e as any).id) this.drop(lang); }, () => {});
+        for (const [lang, x] of this.sessions) if (x.lease && (x.lease === e.lease || x.lease === (e as any).id)) this.drop(lang);
       }
     };
     control.onClose = () => { for (const lang of [...this.sessions.keys()]) this.drop(lang); };
   }
 
   private session(lang: Lang): Promise<Session> {
-    let p = this.sessions.get(lang);
-    if (!p) {
+    let x = this.sessions.get(lang);
+    if (!x) {
       this.emit({ type: "session", lang, state: "starting" });
-      p = (async () => {
-        const lease = await this.control.call<Lease>("acquire", { runtime: lang, mode: "session", project: this.hub.root, owner: `malachite:${this.hub.name}` });
-        if (lease.state === "failed") throw new Error(lease.error ?? `${lang} failed to start`);
-        const rt = await Runtime.connect(path.join(lease.ipc, "runtime.sock"), 120_000);
-        rt.onClose = () => this.drop(lang);
-        this.emit({ type: "session", lang, state: "running" });
-        return { lease, rt };
-      })();
-      p.catch((e) => { this.sessions.delete(lang); this.emit({ type: "session", lang, state: "failed", error: String(e?.message ?? e) }); });
-      this.sessions.set(lang, p);
+      const entry = x = { abort: new AbortController() } as Entry;
+      entry.ready = this.start(lang, entry);
+      entry.ready.catch((e) => {
+        if (this.sessions.get(lang) !== entry) return;   // stopped on purpose: drop said so
+        this.sessions.delete(lang);
+        this.emit({ type: "session", lang, state: "failed", error: String(e?.message ?? e) });
+      });
+      this.sessions.set(lang, entry);
     }
-    return p;
+    return x.ready;
+  }
+
+  private async start(lang: Lang, entry: Entry): Promise<Session> {
+    const lease = await this.control.call<Lease>("acquire", { runtime: lang, mode: "session", project: this.hub.root, owner: `malachite:${this.hub.name}` });
+    entry.lease = lease.id;
+    try {
+      if (lease.state === "failed") throw new Error(lease.error ?? `${lang} failed to start`);
+      entry.abort.signal.throwIfAborted();
+      const rt = await Runtime.connect(path.join(lease.ipc, "runtime.sock"), 120_000, entry.abort.signal);
+      rt.onClose = () => { if (this.sessions.get(lang) === entry) this.drop(lang); };
+      entry.session = { lease, rt };
+      this.emit({ type: "session", lang, state: "running" });
+      return entry.session;
+    } catch (e) {
+      this.control.call("release", { lease: lease.id }).catch(() => {});
+      throw e;
+    }
   }
 
   private drop(lang: Lang) {
-    const p = this.sessions.get(lang);
+    const x = this.sessions.get(lang);
+    if (!x) return;
     this.sessions.delete(lang);
-    p?.then((s) => { s.rt.close(); this.control.call("release", { lease: s.lease.id }).catch(() => {}); }, () => {});
+    x.abort.abort(new Error(`the ${lang} session was stopped before it started`));
+    x.ready.then((s) => { s.rt.close(); this.control.call("release", { lease: s.lease.id }).catch(() => {}); }, () => {});
     this.emit({ type: "session", lang, state: "stopped" });
   }
 
@@ -99,6 +120,7 @@ export class Sessions {
     if (!cell) throw new Error("that cell changed or is gone: run it again");
     const noteId = typeof n.props.id === "string" ? n.props.id : rel;
     const run: Run = { note: noteId, hash, lang: cell.lang, state: "queued", outputs: [] };
+    this.where.set(run, { path: rel, title: n.title });
     const send = () => this.emit({ type: "cell", path: rel, run });
     send();
     const prev = this.queues.get(cell.lang) ?? Promise.resolve();
@@ -138,14 +160,15 @@ export class Sessions {
     return run;
   }
 
-  /** Stops the running cell: SIGINT through the daemon; a runtime that doesn't answer soon restarts. */
-  async interrupt(lang: Lang) {
-    const p = this.sessions.get(lang);
-    if (!p || !this.running.has(lang)) return { interrupted: false };
-    const s = await p;
-    const run = this.running.get(lang);
-    await this.control.call("interrupt", { lease: s.lease.id }).catch(() => s.rt.request("interrupt").catch(() => {}));
-    setTimeout(() => { if (run && this.running.get(lang) === run) this.restart(lang); }, INTERRUPT_GRACE_MS);
+  /** Stops the running cell: SIGINT through the daemon; a runtime that doesn't answer soon restarts. A cell
+   *  whose session is still starting stops the start. Answers at once: it never waits on the runtime. */
+  interrupt(lang: Lang) {
+    const x = this.sessions.get(lang), run = this.running.get(lang);
+    if (!x || !run) return { interrupted: false };
+    const s = x.session;
+    if (!s) { this.drop(lang); return { interrupted: true }; }
+    setTimeout(() => { if (this.running.get(lang) === run && this.sessions.get(lang) === x) this.restart(lang); }, INTERRUPT_GRACE_MS);
+    this.control.call("interrupt", { lease: s.lease.id }).catch(() => s.rt.request("interrupt").catch(() => {}));
     return { interrupted: true };
   }
 
@@ -153,9 +176,9 @@ export class Sessions {
    *  once even while a cell runs; never starts a session just to ask. */
   async ask(lang: Lang, op: string, args: Record<string, unknown>) {
     if (op !== "lint" && op !== "complete") throw new Error(`${op} is not asked from the editor`);
-    const p = this.sessions.get(lang);
-    if (!p) throw new NoSession(`no ${lang} session runs`);
-    return (await p).rt.request(op, args);
+    const x = this.sessions.get(lang);
+    if (!x) throw new NoSession(`no ${lang} session runs`);
+    return (await x.ready).rt.request(op, args);
   }
 
   /** Ends every session (the hub closes); the daemon connection stays for the next one. */
@@ -176,7 +199,7 @@ export class Sessions {
       return {
         ...l, lang,
         stats: await this.control.call("stats", { lease: l.id }).then((r: any) => r.stats, () => null),
-        running: [...this.running.values()].filter((r) => r.lang === lang && r.state === "running").map((r) => ({ note: r.note, hash: r.hash, since: r.ran })),
+        running: [...this.running.values()].filter((r) => r.lang === lang && r.state === "running").map((r) => ({ note: r.note, ...this.where.get(r), hash: r.hash, since: r.ran })),
       };
     }));
     const list = await this.control.call<{ runtimes: { name: string; version: string; modes: string[] }[] }>("runtimes.list");

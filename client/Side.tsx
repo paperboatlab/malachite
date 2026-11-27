@@ -92,7 +92,7 @@ export function Runtimes({ running, version }: { running: number; version: numbe
   const rows: Runtime[] | undefined = peek ? [
     ...peek.sessions.map((s): Runtime => ({
       id: s.id, name: s.runtime, lang: s.lang, state: s.running.length ? "busy" : "idle", via: s.backend, up: s.uptime_s, idle: s.idle_s, memory: s.stats?.memory_bytes,
-      now: s.running[0] && `running a cell in ${s.running[0].note}`,
+      now: s.running[0] && `running a cell in ${s.running[0].title ?? s.running[0].note}`,
       onInterrupt: () => act(() => api.interrupt(s.lang)), onRestart: () => act(() => api.restart(s.lang)),
     })),
     ...peek.runtimes.filter((r) => !started.has(r.name)).map((r): Runtime => ({ id: r.name, name: `${r.name} ${r.version}`, lang: r.name, state: "off" })),
