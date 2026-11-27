@@ -70,7 +70,7 @@ export class Index {
   update(rel: string, abs = this.hub.resolve(rel)): Item | null {
     let st: fs.Stats;
     try { st = fs.statSync(abs); } catch { this.delete(rel); return null; }
-    if (!st.isFile()) { this.delete(rel); return null; }
+    if (!st.isFile() || this.hub.ignored(rel)) { this.delete(rel); return null; }
     const type = path.extname(rel).slice(1).toLowerCase();
     const name = path.basename(rel).replace(/\.md$/i, "");
     const base = { path: rel, name, type, mtime: st.mtimeMs, size: st.size };

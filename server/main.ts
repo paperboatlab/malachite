@@ -213,7 +213,12 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
       const hubInfo = () => ({ ...hub.conf, root: hub.root, shown: tilde(hub.root), place: placeOf(hub.root), conflicts: conflictsIn(hub.root), ...(hub.example ? { example: hub.example } : {}) });
       switch (route) {
         case "GET /api/hub": return send(res, 200, hubInfo());
-        case "POST /api/hub/config": { hub.set(String(body.key) as HubKey, String(body.value ?? "")); history.excludes(); saveSoon(); return send(res, 200, hubInfo()); }
+        case "POST /api/hub/config": {
+          const key = String(body.key) as HubKey, was = hub.conf.ignore;
+          hub.set(key, String(body.value ?? "")); history.excludes(); saveSoon();
+          if (hub.conf.ignore !== was) { index.build(); emit({ type: "files", changed: [] }); }   // the tree and index as ignore now says (the page reloads them)
+          return send(res, 200, hubInfo());
+        }
         case "GET /api/versions": return send(res, 200, { ok: history.ok, example: !!hub.example, versions: history.versions(url.searchParams.get("path") ?? "") });
         case "POST /api/versions/restore": {
           holdSave();

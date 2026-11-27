@@ -26,6 +26,27 @@ export const KEEP = ["90d", "1y", "always"] as const;
 export type HubConfig = { id: string; name: string; schema: number; author: string; created: string; keep: (typeof KEEP)[number]; ignore: string };
 export type HubKey = "name" | "author" | "keep" | "ignore";
 
+/** A hub's `ignore` as a test of one hub-relative path, with Git's meaning (the history's exclude is the same
+ *  patterns): `dir/` only a folder, a pattern with a `/` anchored at the root, else any name at any depth; `*` and
+ *  `?` within a name, `**` across; `!` takes a path back in, but not one under an ignored folder. */
+export function ignoreTest(patterns: string): (rel: string, dir?: boolean) => boolean {
+  const rules = patterns.split(/\s+/).filter((p) => p && !p.startsWith("#")).map((p) => {
+    const not = p.startsWith("!"); if (not) p = p.slice(1);
+    const dir = p.endsWith("/"); p = p.replace(/\/+$/, "");
+    const anchored = p.includes("/"); p = p.replace(/^\//, "");
+    const re = p.split(/(\*\*\/|\/\*\*|\*\*|\*|\?)/).map((t) =>
+      t === "**/" ? "(?:.*/)?" : t === "/**" ? "(?:/.*)?" : t === "**" ? ".*" : t === "*" ? "[^/]*" : t === "?" ? "[^/]" : t.replace(/[.+^${}()|[\]\\]/g, "\\$&")).join("");
+    return { not, dir, re: new RegExp(anchored ? `^${re}$` : `^(?:.*/)?${re}$`) };
+  });
+  const one = (rel: string, dir: boolean) => { let out = false; for (const r of rules) if ((!r.dir || dir) && r.re.test(rel)) out = !r.not; return out; };
+  return (rel, dir = false) => {
+    if (!rules.length) return false;
+    const parts = rel.split("/");
+    for (let i = 1; i < parts.length; i++) if (one(parts.slice(0, i).join("/"), true)) return true;
+    return one(rel, dir);
+  };
+}
+
 /** "n_" and 12 base32 letters: stable across renames; time-ordered enough to read. */
 export const newId = (prefix = "n") => `${prefix}_${Date.now().toString(36)}${randomBytes(4).toString("hex")}`;
 
@@ -181,11 +202,19 @@ export class Hub {
   }
   rel = (abs: string) => path.relative(this.root, abs).split(path.sep).join("/");
 
+  private ignoring?: { patterns: string; test: (rel: string, dir?: boolean) => boolean };
+  /** What the hub's `ignore` keeps out of the tree, the index and the history (a build folder, what apps export). */
+  ignored(rel: string, dir = false): boolean {
+    if (this.ignoring?.patterns !== this.conf.ignore) this.ignoring = { patterns: this.conf.ignore, test: ignoreTest(this.conf.ignore) };
+    return !!rel && this.ignoring.test(rel, dir);
+  }
+
   tree(dir = this.root, rel = this.rel(dir)): Entry[] {
     const out: Entry[] = [];
     for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
       if (HIDDEN.has(d.name) || d.name.startsWith(".") || d.name.endsWith(".tmp")) continue;   // a write in progress
       const abs = path.join(dir, d.name), p = rel ? `${rel}/${d.name}` : d.name;
+      if (this.ignored(p, d.isDirectory())) continue;
       if (d.isDirectory()) out.push({ path: p, name: d.name, kind: "dir", children: this.tree(abs, p) });
       else if (d.isFile()) { const st = fs.statSync(abs); out.push({ path: p, name: d.name, kind: "file", size: st.size, mtime: st.mtimeMs }); }
     }
@@ -193,12 +222,12 @@ export class Hub {
   }
 
   /** Calls `on` with the hub-relative path of what changes (a file or a folder; whoever changed it), but what
-   *  the tree hides (dot folders, node_modules, a write in progress). On Linux one watch per folder: Node's own
+   *  the tree hides (dot folders, node_modules, a write in progress, what `ignore` names). On Linux one watch per folder: Node's own
    *  recursive watch there also watches every file, stats it on each change, and loses a file once a rename
    *  replaces it (every save here is one), so a note saved once never showed a change from outside again. */
   watch(on: (rel: string) => void): { close: () => void } {
     const hidden = (rel: string) => rel.split("/").some((p) => p.startsWith(".") || HIDDEN.has(p)) || rel.endsWith(".tmp");
-    const tell = (rel: string) => { if (!hidden(rel)) on(rel); };
+    const tell = (rel: string) => { if (!hidden(rel) && !this.ignored(rel)) on(rel); };
     if (process.platform !== "linux") {
       const w = fs.watch(this.root, { recursive: true }, (_e, f) => f && tell(f.toString().split(path.sep).join("/")));
       return { close: () => w.close() };
@@ -206,7 +235,7 @@ export class Hub {
     const dirs = new Map<string, fs.FSWatcher>();
     const drop = (rel: string) => { for (const [k, w] of dirs) if (k === rel || k.startsWith(`${rel}/`)) { w.close(); dirs.delete(k); } };
     const add = (rel: string) => {
-      if (dirs.has(rel) || (rel && hidden(rel))) return;
+      if (dirs.has(rel) || (rel && (hidden(rel) || this.ignored(rel, true)))) return;   // a build folder's thousands unwatched
       const abs = path.join(this.root, rel);
       let w: fs.FSWatcher, ds: fs.Dirent[];
       try {
@@ -227,9 +256,10 @@ export class Hub {
     return { close: () => { for (const w of dirs.values()) w.close(); dirs.clear(); } };
   }
 
-  /** Every file, relative (the index walks this): the hub's, or one folder's. */
+  /** Every file, relative (the index walks this): the hub's, or one folder's (none in an ignored one). */
   files(under = ""): Entry[] {
     const out: Entry[] = [];
+    if (this.ignored(under, true)) return out;
     const walk = (es: Entry[]) => { for (const e of es) e.kind === "dir" ? walk(e.children!) : out.push(e); };
     walk(this.tree(under ? this.resolve(under) : this.root));
     return out;

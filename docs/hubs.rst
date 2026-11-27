@@ -10,13 +10,14 @@ The hub's settings
 
 ``.malachite/hub.toml`` holds the settings that travel with the hub: ``id`` (how it is found again
 after a rename or a move), ``name``, ``schema``, ``author``, ``created``, ``keep`` and ``ignore`` (what
-is never versioned). Change them in Settings › Hub or with ``paperboat hub config``; don't edit the
+is never versioned, nor shown in the file tree, the index, search or the graph: Git's patterns, such as
+``stations/*/build/`` for a build folder). Change them in Settings › Hub or with ``paperboat hub config``; don't edit the
 file by hand. A ``hub.toml`` at the hub's root (schema 1) moves into ``.malachite/`` when the hub
 opens.
 
 **out/ is not versioned.** A new hub's ``ignore`` is ``.malachite/out/ out/ *.tmp``: an ``out/`` folder
 anywhere in the hub (where Articula and Julix export an FMU, a linear model, a gain) holds generated
-files, made again from the hub, so its files stay on disk but out of the history. To version them, take
+files, made again from the hub, so its files stay on disk but out of the history and the file tree. To version them, take
 ``out/`` out of ``ignore`` (Settings › Hub, or ``paperboat hub config <hub> ignore ".malachite/out/
 *.tmp"``). To keep one result in the history, put it beside ``out/`` instead of in it. A hub made before
 keeps the ``ignore`` it has.
