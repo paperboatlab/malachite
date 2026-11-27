@@ -1,7 +1,8 @@
 // Markdown to HTML for the Read view: `marked`, plus wikilinks (`[[note]]`, `[[note|text]]`), embeds
 // (`![[file]]`) and math (`$…$`, `$$…$$`, the kit's KaTeX, as Live draws it). A note is someone's text, maybe from a cloned hub: raw HTML is shown as text and a
 // link may only go to http(s), mailto or inside the hub.
-import { INLINE_MATH, mathHtml } from "@paperboatlab/ui";
+import { ICONS, INLINE_MATH, mathHtml, type IconName } from "@paperboatlab/ui";
+import { calloutKind } from "./callouts.ts";
 import { Marked, type Tokens } from "marked";
 import { OWNER, mediaOf, typeOf } from "./files.tsx";
 
@@ -11,6 +12,11 @@ const raw = (p: string) => `/api/raw?path=${encodeURIComponent(p)}`;
 const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 /** Where a picture, a video or a sound goes: ReadView draws the kit's player or the picture into it. */
 const slot = (p: string, alt: string) => `<span class="media-slot" data-path="${esc(p)}" data-alt="${esc(alt)}"></span>`;
+/** A registered icon as markup (the kit's <Icon>, for HTML made outside React). */
+const icon = (name: IconName, cls = "") => {
+  const [box, body, line] = ICONS[name] as readonly [string, string, true?];
+  return `<svg class="pb-icon${line ? " line" : ""}${cls ? ` ${cls}` : ""}" viewBox="${box}" aria-hidden="true">${body}</svg>`;
+};
 /** a/b/../c → a/c */
 const normal = (p: string) => p.split("/").reduce<string[]>((o, s) => (s === ".." ? o.slice(0, -1) : s && s !== "." ? [...o, s] : o), []).join("/");
 
@@ -63,13 +69,19 @@ export function renderer(resolve: Resolve, here: string) {
     }],
     renderer: {
       html: (t: Tokens.HTML | Tokens.Tag) => esc(t.text),
-      // ponytail: an Obsidian callout (`> [!note] Title`) as a titled box; `+`/`-` folding is read but not drawn
+      // an Obsidian callout (`> [!tip]+ Title`): its kind's icon and colour (callouts.ts); `+` or `-` makes it
+      // fold (a <details>, open or closed), its title the key
       blockquote(t: Tokens.Blockquote) {
-        const c = /^\[!([\w-]+)\][+-]?[ \t]*(.*)(?:\n|$)/.exec(t.text);
+        const c = /^\[!([\w-]+)\]([+-]?)[ \t]*(.*)(?:\n|$)/.exec(t.text);
         if (!c) return false;
-        const type = c[1].toLowerCase(), title = c[2].trim() || type[0].toUpperCase() + type.slice(1);
-        return `<div class="callout" data-callout="${esc(type)}"><div class="callout-title">${m.parseInline(title, { async: false })}</div>`
-          + `<div class="callout-body">${m.parse(t.text.slice(c[0].length), { async: false })}</div></div>`;
+        const type = c[1].toLowerCase(), k = calloutKind(type), fold = c[2];
+        const title = m.parseInline(c[3].trim() || type[0].toUpperCase() + type.slice(1), { async: false });
+        const body = t.text.slice(c[0].length).trim() ? `<div class="callout-body">${m.parse(t.text.slice(c[0].length), { async: false })}</div>` : "";
+        const head = `${icon(k.icon, "callout-icon")}<span>${title}</span>`;
+        const attrs = `class="callout ${k.role}" data-callout="${esc(k.kind)}"`;
+        return fold
+          ? `<details ${attrs}${fold === "+" ? " open" : ""}><summary class="callout-title">${head}${icon("chevron-right", "callout-fold")}</summary>${body}</details>`
+          : `<div ${attrs}><div class="callout-title">${head}</div>${body}</div>`;
       },
       link(t: Tokens.Link) {
         const text = this.parser.parseInline(t.tokens);
