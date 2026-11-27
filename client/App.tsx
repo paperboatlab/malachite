@@ -5,14 +5,14 @@
 // (@paperboatlab/ui): the menus and the command registry, the workspace parts, the file tree, the editor and
 // its languages, the plot, the canvas layout; Malachite brings the hub, its notes and cells. Files are the record.
 import {
-  About, AppMark, Dialog, Key, Menu, MenuBar, Notifications, Panel, PanelsKey, Rail, ScaleSetting, Search, Segmented, SettingRow, Settings, SettingsSection, ShortcutList, THEMES, ThemeSetting, Toasts, WindowKeys, exampleCommands, isEnabled, isScale, readStored, useScale, useShortcuts, useTheme, useToasts, writeStored,
+  About, AppMark, Dialog, ExampleBanner, Key, Menu, MenuBar, Notifications, Panel, PanelsKey, Rail, ScaleSetting, Search, Segmented, SettingRow, Settings, SettingsSection, ShortcutList, THEMES, ThemeSetting, Toasts, WindowKeys, exampleCommands, exampleFromUrl, isEnabled, isScale, readStored, useScale, useShortcuts, useTheme, useToasts, writeStored,
   type Command, type CommandMenu, type Credit, type Example, type MenuEntry, type Scale, type SearchItem, type Theme,
 } from "@paperboatlab/ui";
 import { Editor, EditorSettingsPane, EditorTabs, afterClose, languageFor, livePreview, markdown, orderTabs, tabMenu, useEditorSettings, type Session } from "@paperboatlab/ui/editor";
 import { EditorView } from "@codemirror/view";
 import { FileTree, type FileEntry } from "@paperboatlab/ui/files";
 import { ConnectHub, HubSettings, OpenFile, SaveFile, type Hub as KitHub } from "@paperboatlab/ui/hub";
-import { NotAHub, Start, TypedPath, Unsaved, WorkspaceWell, baseName, fileMenu as fileCommands, recentFor, recentMenu, shell, useOpening, type RecentEntry } from "@paperboatlab/ui/workspace";
+import { NotAHub, Start, TypedPath, Unsaved, WorkspaceWell, baseName, fileMenu as fileCommands, recentFor, recentMenu, shell, tilde, useOpening, type RecentEntry } from "@paperboatlab/ui/workspace";
 import { redo, undo } from "@codemirror/commands";
 import { Plot2D, type PlotSeries } from "@paperboatlab/ui/plot";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -66,6 +66,8 @@ const SESSIONS: Record<Lang, Session> = {
   julia: { request: (op, args) => api.ask("julia", op, args) },
   python: { request: (op, args) => api.ask("python", op, args) },
 };
+// the example this window opened (paperboat example open's ?example=…, paperboat#75): read once, at load
+const opened = exampleFromUrl(location.search);
 // the window's sketch for the Panels key's previews (64 × 44)
 const LAYOUT = { l: [4, 4, 14, 36], m: [20, 4, 26, 36], r: [48, 4, 12, 36] } as const satisfies Record<string, [number, number, number, number]>;
 
@@ -84,7 +86,7 @@ export function App() {
   const [ws, setWs] = useState<Workspace | null | undefined>(undefined);   // undefined: not asked yet; null: the Start page
   const [home, setHome] = useState<string>();
   const [recent, setRecent] = useState<RecentEntry[]>([]);   // $PAPERBOAT_HOME/recent.json, every app's
-  const [dlg, setDlg] = useState<"" | "connect" | "open" | "save" | "folder" | "file">("");
+  const [dlg, setDlg] = useState<"" | "connect" | "open" | "save" | "folder" | "file" | "copy">("");
   const [notHub, setNotHub] = useState<{ name: string; path: string } | null>(null);
   const [unsaved, setUnsaved] = useState<{ closing?: string; then: () => void } | null>(null);
   const [hub, setHub] = useState<HubConf | null>(null);
@@ -503,6 +505,9 @@ export function App() {
   const newHub = () => setAsk({ title: "New hub", label: "Name", ok: "Create", note: "It goes in ~/Documents/paperboat, and Malachite works in it.",
     run: (n) => guard("the hub", () => { opener.open({ name: n }, () => api.hubNew(n).then(enter)).catch(fail); }) });
   // the system's dialogs in a Paperboat window; in a browser, the path typed
+  // the example banner's Copy: to the folder it was opened from, else one asked for as Open folder… asks
+  const copyExample = (to: string) => { if (opened) api.copyExample(opened.id, to).then((r) => show({ title: `Copied to ${tilde(r.path, home)}`, detail: "It opens in a new window", state: "done" }), fail); };
+  const copyTo = () => { if (opened?.to) return copyExample(opened.to); const sh = shell(); if (sh) sh.pickFolder("Copy the example to a folder").then((p) => p && copyExample(p), fail); else setDlg("copy"); };
   const openFolder = () => { const sh = shell(); if (sh) sh.pickFolder("Open a hub or a folder").then((p) => p && openPath(p), fail); else setDlg("folder"); };
   const openFile = () => {
     if (ws) return setDlg("open");   // in a hub: our picker over it
@@ -563,7 +568,7 @@ export function App() {
     { id: "help.issue", label: "Report an issue…", menu: "help", group: "docs", icon: "link-external", run: () => { window.open("https://github.com/paperboatlab/malachite/issues/new", "_blank", "noopener"); } },
     { id: "help.keys", label: "Keyboard shortcuts", menu: "help", group: "keys", icon: "keys", shortcut: "Ctrl /", chord: { key: "/", ctrl: true }, run: () => setSettings("shortcuts") },
     { id: "help.about", label: "About Malachite", menu: "help", group: "about", run: () => openAbout() },
-    ...exampleCommands(examples, (id) => { api.openExample(id).catch(fail); }),   // Ctrl K only: "examples" is no menu of the bar
+    ...exampleCommands(examples, (id) => { api.openExample(id, opened ? opened.to ?? null : undefined).catch(fail); }),   // Ctrl K only: "examples" is no menu of the bar
   ];
   useShortcuts(commands);
   // what Search offers: built when it opens (every note and file: not on every redraw)
@@ -628,6 +633,7 @@ export function App() {
           onOpenFolder={openFolder} onOpenFile={openFile} onNew={() => setDlg("connect")} onConnect={() => setDlg("connect")} onNewHub={newHub} onRecent={onRecent} />}
       </section></div></main>}
       {ws && <main className="pages">
+        {opened && <ExampleBanner name={opened.name} folder={opened.to && tilde(opened.to, home)} cache={opened.cache} onCopy={copyTo} />}
         {page === "notes" && (
           <div className="notes-page">
             <Panel name={trashOpen ? "Trash" : "Files"} count={trashOpen ? undefined : `${items.length}`} side="left" hidden={hideL} onHidden={setHideL} icon="a-notes" width={262}
@@ -754,6 +760,7 @@ export function App() {
       {dlg === "save" && ws && current && <SaveFile what={typeOf(current) === "md" ? "the note" : "the file"} types={[typeOf(current)]} name={nameOf(current).replace(/\.[^.]+$/, "")}
         hub={kitHub(hubs.find((h) => h.id === ws.hub) ?? { id: ws.hub, name: ws.name, shown: ws.root, place: "local" })} list={async () => entries} onSave={saveAs} onClose={() => setDlg("")} />}
       {(dlg === "folder" || dlg === "file") && <TypedPath title={dlg === "folder" ? "Open folder" : "Open a local file"} what={dlg} onOpen={(p) => openPath(p)} onClose={() => setDlg("")} />}
+      {dlg === "copy" && <TypedPath title="Copy the example to a folder" onOpen={(p) => { setDlg(""); copyExample(p); }} onClose={() => setDlg("")} />}
       {notHub && <NotAHub name={notHub.name} onMake={() => { openPath(notHub.path, true); setNotHub(null); }} onOpenHub={() => { setNotHub(null); setDlg("connect"); }} onClose={() => setNotHub(null)} />}
       {unsaved && current && <Unsaved name={nameOf(current)} closing={unsaved.closing}
         onSave={() => { const then = unsaved.then; setUnsaved(null); flush.current().then(() => { dropDraft(); then(); }); }}
