@@ -14,7 +14,7 @@ export type Cell = { lang: Lang; code: string; hash: string; line: number };
 export type NoteData = { path: string; text: string; props: Props; body: string; title: string; cells: Cell[]; sealed: boolean; intact?: boolean; outputs: Record<string, Run> };
 export type LogEvent = { time: string; actor: string; action: string; target?: string; details?: Record<string, unknown> } | { damaged: string };
 export type Links = { links: { link: string; path: string | null }[]; backlinks: { path: string; title: string; context: string }[]; history: LogEvent[] };
-export type Session = { id: string; runtime: string; lang: Lang; backend: string; state: string; uptime_s?: number; idle_s?: number; stats: { cpu_percent: number; memory_bytes: number } | null; running: { note: string; since?: string }[] };
+export type Session = { id: string; runtime: string; lang: Lang; backend: string; state: string; uptime_s?: number; idle_s?: number; stats: { cpu_percent: number; memory_bytes: number } | null; running: { note: string; title?: string; path?: string; since?: string }[] };
 export type Trashed = { id: string; path: string; kind: "file" | "folder"; time: string; actor: string };
 /** The open hub's settings (.malachite/hub.toml) and where it is. */
 export type HubConf = { id: string; name: string; schema: number; author: string; created: string; keep: "90d" | "1y" | "always"; ignore: string; root: string; shown: string; place: Place; conflicts: string[] };
