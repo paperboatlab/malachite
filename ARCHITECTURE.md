@@ -60,7 +60,9 @@ flowchart LR
 - `server/sessions.ts`: `Sessions`: one session lease per language for the hub; cells queue per
   language, run in their note's folder, and their outputs are written to
   `.malachite/out/<note id>/<cell hash>.json` with the runtime, image digest and backend that made them.
-  Interrupt goes through the daemon (SIGINT); no answer within 3 s restarts the session.
+  Interrupt answers at once: SIGINT through the daemon, and no answer within 3 s restarts the session; a
+  cell still waiting for its session stops the start. A start also stops when its lease's runtime ends,
+  instead of waiting out the connect.
 - `server/main.ts`: the HTTP server. The workspace is switched at runtime (`POST /api/workspace`: a known
   hub by id, a folder or a file by path, which opens the hub it lies in, `make` turning a plain folder into a
   hub, or nothing: the Start page); a plain folder answers 409 with `notHub`, as Malachite works in hubs

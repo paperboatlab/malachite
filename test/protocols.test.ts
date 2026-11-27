@@ -110,6 +110,28 @@ test("a cell runs in a session lease and its output is kept beside the note", as
   dsrv.close();
 });
 
+test("an interrupt answers at once and stops a cell whose session is still starting (malachite#29)", async () => {
+  const dir = tmp(), ipc = path.join(dir, "ipc"), calls: string[] = [];
+  fs.mkdirSync(ipc);   // no runtime ever listens there
+  const dsrv = fakeDaemon(path.join(dir, "control.sock"), ipc, calls);
+  const hub = new Hub(path.join(dir, "hub") + (fs.mkdirSync(path.join(dir, "hub")), ""));
+  const p = hub.create("", "Slow start");
+  hub.write(p, hub.read(p) + "```python\n1\n```\n");
+  const s = new Sessions(hub, new Control(path.join(dir, "control.sock"), false), () => {});
+  const run = s.run(p, (await import("../server/note.ts")).parse(hub.read(p)).cells[0].hash);
+  while (!calls.includes("acquire")) await new Promise((r) => setTimeout(r, 10));
+  const peek = await s.peek();
+  assert.equal(peek.sessions[0].running[0].title, "Slow start");   // the note's title, not its id (malachite#30)
+  const t0 = Date.now();
+  assert.deepEqual(s.interrupt("python"), { interrupted: true });
+  while (run.state !== "failed" && run.state !== "done") await new Promise((r) => setTimeout(r, 10));
+  assert.ok(Date.now() - t0 < 1000, "the cell stopped at once, not after the connect's timeout");
+  assert.match((run.outputs[0] as any).error.message, /stopped before it started/);
+  while (!calls.includes("release")) await new Promise((r) => setTimeout(r, 10));
+  s.close();
+  dsrv.close();
+});
+
 test("a cell whose code changed is refused with a reason", () => {
   const dir = tmp();
   const hub = new Hub(dir);
