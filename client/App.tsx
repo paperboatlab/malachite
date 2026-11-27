@@ -313,7 +313,7 @@ export function App() {
     draft.current = { path, text };
     if (!was) setDirty(true);   // no state set on the other keys: not even one that ends up the same redraws
     if (typeOf(path) === "md") {   // Live's properties follow the front matter: redrawn only when it changes
-      const m = /^---\r?\n[\s\S]*?\r?\n---(\r?\n|$)/.exec(text), f = m ? m[0] : "", o = frontRef.current;
+      const m = /^\uFEFF?---\r?\n[\s\S]*?\r?\n---(\r?\n|$)/.exec(text), f = m ? m[0] : "", o = frontRef.current;
       if (!o || o.path !== path || o.text !== f) setFront({ path, text: f });
     }
     arm();
