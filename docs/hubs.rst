@@ -14,6 +14,13 @@ is never versioned). Change them in Settings › Hub or with ``paperboat hub con
 file by hand. A ``hub.toml`` at the hub's root (schema 1) moves into ``.malachite/`` when the hub
 opens.
 
+**out/ is not versioned.** A new hub's ``ignore`` is ``.malachite/out/ out/ *.tmp``: an ``out/`` folder
+anywhere in the hub (where Articula and Julix export an FMU, a linear model, a gain) holds generated
+files, made again from the hub, so its files stay on disk but out of the history. To version them, take
+``out/`` out of ``ignore`` (Settings › Hub, or ``paperboat hub config <hub> ignore ".malachite/out/
+*.tmp"``). To keep one result in the history, put it beside ``out/`` instead of in it. A hub made before
+keeps the ``ignore`` it has.
+
 ``.malachite/`` holds ``hub.toml`` and ``history/``; the rest of it (``out/``, ``trash/``) can be
 deleted while no Malachite has the hub open (``serving.pid`` tells ``hub move`` that one does).
 
