@@ -46,13 +46,13 @@ export function LinksCard({ links, self, graph, onOpen, onCreate, onRestore }: {
 
 /** The note's versions (the hub's history, Git underneath, never named): when, who, what, Restore. */
 function Versions({ path, changed, onRestore }: { path: string; changed: unknown; onRestore: (v: Version) => void }) {
-  const [vs, setVs] = useState<{ ok: boolean; versions: Version[] } | null>(null);
+  const [vs, setVs] = useState<{ ok: boolean; example?: boolean; versions: Version[] } | null>(null);
   useEffect(() => { let live = true; api.versions(path).then((v) => live && setVs(v), () => live && setVs(null)); return () => { live = false; }; }, [path, changed]);
   if (!vs) return null;
   return (
     <>
       <div className="sh hr"><b>Versions</b><code>{vs.versions.length || ""}</code></div>
-      {!vs.ok && <p className="empty-note">History needs Git on this computer.</p>}
+      {!vs.ok && <p className="empty-note">{vs.example ? "An example keeps no versions: a copy of it does." : "History needs Git on this computer."}</p>}
       {vs.ok && vs.versions.length === 0 && <p className="empty-note">Saved changes become versions here.</p>}
       <div className="vers">
         {vs.versions.slice(0, 30).map((v, i) => (

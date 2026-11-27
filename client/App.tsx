@@ -139,6 +139,15 @@ export function App() {
   const wsId = ws?.hub ?? null;
   const wsRef = useRef(wsId);
   wsRef.current = wsId;
+  // an example opened where it is: the server says so (however it was opened), as does this window's URL for the
+  // hub it first opened. Read-only: nothing on the page changes it (the server refuses anyway); its banner copies it
+  const firstHub = useRef<string | null | undefined>(undefined);
+  if (firstHub.current === undefined && ws !== undefined) firstHub.current = wsId;
+  const example = ws?.example ?? (opened && ws && ws.hub === firstHub.current ? { id: opened.id } : undefined);
+  const locked = example ? `${opened?.id === example.id ? opened.name : ws?.name ?? "It"} is an example: copy it to change it` : undefined;
+  const ro = !!locked;
+  const lockedRef = useRef(locked);
+  lockedRef.current = locked;
   // the theme every app starts in ($PAPERBOAT_HOME/settings.json); this browser's copy draws the first frame
   useEffect(() => writeStored("paperboat.theme", theme), [theme]);
   useEffect(() => writeStored("paperboat.scale", scale), [scale]);
@@ -278,6 +287,7 @@ export function App() {
 
   const saved = useRef("");   // "<path>:<mtime>" of this page's last save: its watcher event is not news
   const save = useCallback(async (p: string, text: string) => {
+    if (lockedRef.current) { dropDraft(); show({ title: `Not saved: ${lockedRef.current}`, detail: "the banner's Copy makes one to change", state: "failed" }); return; }
     try {
       const r = await api.save(p, text);
       saved.current = `${p}:${r.mtime}`;
@@ -339,6 +349,7 @@ export function App() {
     backlinks: (p) => { open(p); setHideR(false); },
     backlinkCount: (p) => allLinks.filter((l) => l.to === p).length,
     sealed: (p) => !!items.find((i) => i.path === p)?.props.sealed,
+    locked,
   };
   // a right click on a tab (REBRAND "Tab menu"): the tab's group, then the file's menu without Open
   const tabItems = (p: string) => {
@@ -367,6 +378,7 @@ export function App() {
   const stopCell = (c: Cell) => { api.interrupt(c.lang).catch(fail); };
   const onLink = (target: string, missing: boolean) => {
     if (!missing) return open(target);
+    if (locked) return show({ title: `${target} isn't in the example`, detail: locked, state: "failed" });
     setAsk({ title: `Create ${target}?`, label: "Title", value: target, ok: "Create", run: (t) => api.create(current ? dirOf(current) : "", t).then((r) => { reload(); open(r.path); }, fail) });
   };
 
@@ -402,7 +414,7 @@ export function App() {
 
   /** A picture, a video or a sound, wherever a note embeds one (Read, Live) and in the file view. */
   const mediaFor = (path: string | null, alt: string) => (
-    <MediaEmbed path={path} alt={alt} version={path ? items.find((i) => i.path === path)?.mtime : undefined} fail={fail}
+    <MediaEmbed path={path} alt={alt} version={path ? items.find((i) => i.path === path)?.mtime : undefined} fail={fail} readOnly={ro}
       onSaved={(p) => { reload(); show({ title: "Saved", detail: `${p} · the original is in the trash`, state: "done" }); }} />
   );
   /** An embed as Live found it: a wikilink's target resolved, a Markdown path from the note's folder. */
@@ -413,6 +425,7 @@ export function App() {
   dropAct.current = async (files, at) => {
     const v = liveView.current;
     if (!v || !current || note?.sealed) return;
+    if (lockedRef.current) { show({ title: "Not added", detail: lockedRef.current, state: "failed" }); return; }
     const dir = dirOf(current), stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-"), lines: string[] = [];
     const id = show({ title: `Adding ${files.length === 1 ? files[0].name || "a file" : `${files.length} files`}`, state: "working" });
     try {
@@ -459,7 +472,7 @@ export function App() {
    *  inside the front matter (hidden in Live, and the caret starts there). */
   const insertCell = (lang: Lang, at?: number | null) => {
     const v = liveView.current;
-    if (!v || mode === "read") return;
+    if (!v || mode === "read" || ro) return;
     const text0 = v.state.doc.toString(), front = text0.length - split(text0).body.length;
     const want = at ?? v.state.selection.main.head, pos = want < front ? v.state.doc.length : want;   // no caret in the text yet: at its end
     const line = v.state.doc.lineAt(pos), blank = !line.text.trim();
@@ -468,8 +481,8 @@ export function App() {
     v.focus();
   };
   const noteMenu = (at?: number | null): MenuEntry[] => [
-    { id: "jl", label: "Insert Julia cell", icon: "add", disabled: !!note?.sealed, why: "It is sealed", run: () => insertCell("julia", at) },
-    { id: "py", label: "Insert Python cell", icon: "add", disabled: !!note?.sealed, why: "It is sealed", run: () => insertCell("python", at) },
+    { id: "jl", label: "Insert Julia cell", icon: "add", disabled: !!note?.sealed || ro, why: locked ?? "It is sealed", run: () => insertCell("julia", at) },
+    { id: "py", label: "Insert Python cell", icon: "add", disabled: !!note?.sealed || ro, why: locked ?? "It is sealed", run: () => insertCell("python", at) },
   ];
 
   // About asks the server for the hub format and Paperboat's version as it opens
@@ -506,7 +519,7 @@ export function App() {
     run: (n) => guard("the hub", () => { opener.open({ name: n }, () => api.hubNew(n).then(enter)).catch(fail); }) });
   // the system's dialogs in a Paperboat window; in a browser, the path typed
   // the example banner's Copy: to the folder it was opened from, else one asked for as Open folder… asks
-  const copyExample = (to: string) => { if (opened) api.copyExample(opened.id, to).then((r) => show({ title: `Copied to ${tilde(r.path, home)}`, detail: "It opens in a new window", state: "done" }), fail); };
+  const copyExample = (to: string) => { if (example) api.copyExample(example.id, to).then((r) => show({ title: `Copied to ${tilde(r.path, home)}`, detail: "It opens in a new window", state: "done" }), fail); };
   const copyTo = () => { if (opened?.to) return copyExample(opened.to); const sh = shell(); if (sh) sh.pickFolder("Copy the example to a folder").then((p) => p && copyExample(p), fail); else setDlg("copy"); };
   const openFolder = () => { const sh = shell(); if (sh) sh.pickFolder("Open a hub or a folder").then((p) => p && openPath(p), fail); else setDlg("folder"); };
   const openFile = () => {
@@ -520,6 +533,7 @@ export function App() {
    *  note), then that file shows. Onto itself it is Save. */
   const saveAs = (to: string) => {
     if (!current) return;
+    if (locked) { setDlg(""); show({ title: "Not saved", detail: locked, state: "failed" }); return; }
     if (to === current) { setDlg(""); flush.current(); return; }
     let text = draft.current?.text ?? note?.text ?? plain ?? "";
     if (typeOf(current) === "md") { const { props, body } = split(text); for (const k of ["id", "sealed", "sealed_by", "hash"]) delete props[k]; text = join(props, body); }
@@ -531,19 +545,20 @@ export function App() {
   const MENUS: CommandMenu[] = [{ id: "file", label: "File" }, { id: "edit", label: "Edit" }, { id: "view", label: "View" }, { id: "note", label: "Note" }, { id: "help", label: "Help" }];
   const noHub = ws ? {} : { enabled: false, why: "no hub open" };
   const needNote = (more = true) => (note && more ? {} : { enabled: false, why: note ? "not here" : "open a note first" });
-  const editing = () => !!note && !note.sealed && mode !== "read" && !!liveView.current;
+  const editing = () => !ro && !!note && !note.sealed && mode !== "read" && !!liveView.current;
+  const noChange = locked ? { enabled: false, why: locked } : {};   // an example: what would change it, greyed with why
   const commands: Command[] = [
     ...fileCommands({
       noun: "note", workspace: ws ?? null, file: !!ws && !!current, hubs: true, hubOnly: true, recent: recentItems,
       onNew: () => (ws ? newNote() : setDlg("connect")), onOpenFile: openFile, onOpenFolder: openFolder, onConnect: () => setDlg("connect"),
       onSave: () => { flush.current(); }, onSaveAs: () => setDlg("save"), onCloseFile: closeFile, onCloseWorkspace: closeHub, onSettings: () => setSettings("general"),
-    }),
+    }).map((c) => (locked && ["file.new", "file.save", "file.saveAs"].includes(c.id) ? { ...c, ...noChange } : c)),
     { id: "edit.undo", label: "Undo", menu: "edit", group: "undo", shortcut: "Ctrl Z", enabled: editing, why: "nothing to undo here", run: () => { const v = liveView.current; if (v) undo(v); } },
     { id: "edit.redo", label: "Redo", menu: "edit", group: "undo", shortcut: "Ctrl Shift Z", enabled: editing, why: "nothing to redo here", run: () => { const v = liveView.current; if (v) redo(v); } },
-    { id: "edit.rename", label: "Rename…", menu: "edit", group: "file", ...(current ? {} : { enabled: false, why: "no file open" }), run: () => current && actions.rename(current) },
+    { id: "edit.rename", label: "Rename…", menu: "edit", group: "file", ...(current ? noChange : { enabled: false, why: "no file open" }), run: () => current && actions.rename(current) },
     { id: "edit.link", label: "Copy link", menu: "edit", group: "file", ...(current ? {} : { enabled: false, why: "no file open" }), run: () => current && actions.copy(`[[${nameOf(current).replace(/\.md$/, "")}]]`, "Link") },
     { id: "edit.path", label: "Copy path", menu: "edit", group: "file", ...(current ? {} : { enabled: false, why: "no file open" }), run: () => current && actions.copy(current, "Path") },
-    { id: "edit.trash", label: "Move to trash", menu: "edit", group: "file", ...(current ? {} : { enabled: false, why: "no file open" }), run: () => current && actions.trash(current) },
+    { id: "edit.trash", label: "Move to trash", menu: "edit", group: "file", ...(current ? noChange : { enabled: false, why: "no file open" }), run: () => current && actions.trash(current) },
     { id: "edit.search", label: ws ? `Search ${hub?.name ?? "the hub"}…` : "Run a command…", menu: "edit", group: "find", shortcut: "Ctrl K", chord: { key: "k", ctrl: true }, quiet: true, run: () => setSearch((o) => !o) },
     ...(["notes", "views", "graph", "log"] as Page[]).map((p, i): Command => ({ id: `view.${p}`, label: `${p[0].toUpperCase()}${p.slice(1)}`, menu: "view", group: "pages", shortcut: `Alt ${i + 1}`, checked: !!ws && page === p, ...noHub, run: () => setPage(p) })),
     { id: "view.files", label: "Files", menu: "view", group: "panels", shortcut: "Ctrl B", chord: { key: "b", ctrl: true }, checked: !!ws && !hideL, ...noHub, run: () => setHideL((h) => !h) },
@@ -556,13 +571,13 @@ export function App() {
     { id: "view.theme", label: "Theme", menu: "view", group: "theme", quiet: true, run: () => {},
       sub: THEMES.map((t): MenuEntry => ({ id: `theme.${t}`, label: t[0].toUpperCase() + t.slice(1), checked: theme === t, run: () => changeTheme(t) })) },
     ...noteMenu().flatMap((m): Command[] => (typeof m === "object" && "run" in m ? [{ id: `note.${m.id}`, label: m.label, menu: "note", group: "cells", ...needNote(mode !== "read" && !m.disabled), run: m.run }] : [])),
-    { id: "note.seal", label: "Seal…", icon: "lock", menu: "note", group: "note", ...needNote(!note?.sealed), run: () => note && actions.seal(note.path) },
+    { id: "note.seal", label: "Seal…", icon: "lock", menu: "note", group: "note", ...needNote(!note?.sealed), ...noChange, run: () => note && actions.seal(note.path) },
     { id: "note.graph", label: "Show in graph", menu: "note", group: "note", ...needNote(), run: () => note && actions.graph(note.path) },
     { id: "note.jl", label: "Restart the Julia session", menu: "note", group: "sessions", ...noHub, run: () => { api.restart("julia").catch(fail); } },
     { id: "note.py", label: "Restart the Python session", menu: "note", group: "sessions", ...noHub, run: () => { api.restart("python").catch(fail); } },
     { id: "note.runtimes", label: "Manage runtimes…", menu: "note", group: "sessions", icon: "a-runtimes", run: () => { api.manageRuntimes().catch(fail); } },
     { id: "note.trash", label: "Show the trash", menu: "note", group: "trash", ...noHub, run: () => { setPage("notes"); setHideL(false); setTrashOpen(true); } },
-    { id: "note.empty", label: "Empty the trash…", menu: "note", group: "trash", ...noHub,
+    { id: "note.empty", label: "Empty the trash…", menu: "note", group: "trash", ...noHub, ...noChange,
       run: () => setAsk({ title: "Empty the trash?", note: "Everything in it leaves the hub for good; it can't be restored.", danger: true, ok: "Empty trash", run: () => api.emptyTrash().then(() => setTrashVersion((n) => n + 1), fail) }) },
     { id: "help.docs", label: "Malachite docs", menu: "help", group: "docs", icon: "link-external", run: () => { window.open("https://paperboatlab.org/apps/malachite/", "_blank", "noopener"); } },
     { id: "help.issue", label: "Report an issue…", menu: "help", group: "docs", icon: "link-external", run: () => { window.open("https://github.com/paperboatlab/malachite/issues/new", "_blank", "noopener"); } },
@@ -596,10 +611,13 @@ export function App() {
   act.current = actions;
   const fileTree = useMemo(() => <FileTree entries={entries} active={revealed ?? current ?? undefined} ariaLabel="Hub" menu={(e) => fileMenu(e, act.current)}
     actions={{
-      onOpen: (e) => act.current.open(e.path), onRename: (e) => act.current.rename(e.path), onDelete: (e) => act.current.trash(e.path),
-      onCopyPath: (e) => act.current.copy(e.path, "Path"),
-      onMove: (src, target) => { const to = target ? `${target.path}/${src.name}` : src.name; if (to !== src.path) api.move(src.path, to).then(reload, fail); },
-    }} />, [entries, revealed, current, reload, fail]);
+      onOpen: (e) => act.current.open(e.path), onCopyPath: (e) => act.current.copy(e.path, "Path"),
+      // an example: no rename, no delete, no drag and drop (its menu greys them, with why)
+      ...(ro ? {} : {
+        onRename: (e: FileEntry) => act.current.rename(e.path), onDelete: (e: FileEntry) => act.current.trash(e.path),
+        onMove: (src: FileEntry, target?: FileEntry) => { const to = target ? `${target.path}/${src.name}` : src.name; if (to !== src.path) api.move(src.path, to).then(reload, fail); },
+      }),
+    }} />, [entries, revealed, current, reload, fail, ro]);
   const t = current ? typeOf(current) : "";
   const liveProps = useMemo(() => (note ? split(front?.path === note.path ? front.text : note.text).props : {}), [note, front]);
   const nRunning = Object.values(running).filter(Boolean).length;
@@ -613,7 +631,7 @@ export function App() {
         {ws && <WorkspaceWell workspace={ws} home={home} recent={recentItems} hubs={hubs.map(kitHub)} opening={opener.opening} onOpenFolder={openFolder} onConnect={() => setDlg("connect")}
           onClose={closeHub} onSwitchHub={switchHub} onNewHub={newHub} />}
         <span className="bend">
-          {ws && page === "notes" && <Key kind="primary" icon="new-file" onClick={() => newNote()}>New note</Key>}
+          {ws && page === "notes" && !ro && <Key kind="primary" icon="new-file" onClick={() => newNote()}>New note</Key>}
           <Runtimes running={nRunning} version={peekVersion} />
           <Notifications {...notes} />
           {ws && page === "notes" && <PanelsKey layout={LAYOUT} onToggle={(id) => (id === "l" ? setHideL : setHideR)((h) => !h)}
@@ -633,15 +651,15 @@ export function App() {
           onOpenFolder={openFolder} onOpenFile={openFile} onNew={() => setDlg("connect")} onConnect={() => setDlg("connect")} onNewHub={newHub} onRecent={onRecent} />}
       </section></div></main>}
       {ws && <main className="pages">
-        {opened && <ExampleBanner name={opened.name} folder={opened.to && tilde(opened.to, home)} cache={opened.cache} onCopy={copyTo} />}
+        {example && <ExampleBanner name={opened?.id === example.id ? opened.name : hub?.name ?? ws.name} folder={opened?.to && tilde(opened.to, home)} cache={opened?.cache} onCopy={copyTo} />}
         {page === "notes" && (
           <div className="notes-page">
             <Panel name={trashOpen ? "Trash" : "Files"} count={trashOpen ? undefined : `${items.length}`} side="left" hidden={hideL} onHidden={setHideL} icon="a-notes" width={262}
               tools={<>
-                {!trashOpen && <><Key size="sm" kind="quiet" round icon="new-file" label="New note (Ctrl N)" onClick={() => newNote("")} /><Key size="sm" kind="quiet" round icon="new-folder" label="New folder" onClick={() => actions.newFolder("")} /></>}
-                <Key size="sm" kind="quiet" round icon="trash" label={trashOpen ? "Back to the hub" : "Trash"} aria-pressed={trashOpen} onClick={() => setTrashOpen((o) => !o)} />
+                {!trashOpen && !ro && <><Key size="sm" kind="quiet" round icon="new-file" label="New note (Ctrl N)" onClick={() => newNote("")} /><Key size="sm" kind="quiet" round icon="new-folder" label="New folder" onClick={() => actions.newFolder("")} /></>}
+                {!ro && <Key size="sm" kind="quiet" round icon="trash" label={trashOpen ? "Back to the hub" : "Trash"} aria-pressed={trashOpen} onClick={() => setTrashOpen((o) => !o)} />}
               </>}>
-              {trashOpen ? <TrashList version={trashVersion} fail={fail}
+              {trashOpen && !ro ? <TrashList version={trashVersion} fail={fail}
                 confirm={(title, note, ok, run) => setAsk({ title, note, danger: true, ok, run })}
                 onRestored={(p, was) => { reload(); if (p !== was) show({ title: "Restored under a new name", detail: `${was} as ${p}: its name was taken`, state: "done" }); }} />
               : fileTree}
@@ -656,22 +674,22 @@ export function App() {
                 <div className="crumb">
                   <span>{hub?.name} / {current.split("/").slice(0, -1).map((d) => `${d} / `).join("")}<b>{nameOf(current)}</b></span>
                   <span className="row-end">
-                    {(note || plain !== null) && <span>{unsaved ? "not saved" : dirty ? "saving…" : note?.sealed ? "sealed" : "saved"}</span>}
-                    {note && !note.sealed && <Key size="sm" icon="lock" onClick={() => actions.seal(note.path)} title="Seal: freeze the body and record its hash">Seal…</Key>}
+                    {(note || plain !== null) && <span title={locked}>{ro ? "read-only" : unsaved ? "not saved" : dirty ? "saving…" : note?.sealed ? "sealed" : "saved"}</span>}
+                    {note && !note.sealed && !ro && <Key size="sm" icon="lock" onClick={() => actions.seal(note.path)} title="Seal: freeze the body and record its hash">Seal…</Key>}
                   </span>
                 </div>
               )}
               <div className="body">
-                {!current && <div className="empty"><AppMark app="malachite" size={72} idle label="" /><p>Open a note from the hub, or make one.</p><Key kind="primary" icon="new-file" onClick={() => newNote("")}>New note</Key></div>}
+                {!current && <div className="empty"><AppMark app="malachite" size={72} idle label="" />{ro ? <p>Open a note from the example.</p> : <><p>Open a note from the hub, or make one.</p><Key kind="primary" icon="new-file" onClick={() => newNote("")}>New note</Key></>}</div>}
                 {note && mode === "read" && <ReadView note={note} runs={runs} resolve={resolve} look={look} onLink={onLink} onRun={runCell} onStop={stopCell} media={mediaFor} />}
                 {note && mode !== "read" && (() => {
                   const editor = <Editor key={`${note.path}:${note.sealed}:${mode}:${restored}`} value={draft.current?.path === note.path ? draft.current.text : note.text} language={markdown} settings={prose} appTheme={look.appTheme}
-                    readOnly={note.sealed} ariaLabel={`${note.title}, Markdown`} onChange={(text) => typed(note.path, text)}
+                    readOnly={note.sealed || ro} ariaLabel={`${note.title}, Markdown`} onChange={(text) => typed(note.path, text)}
                     extra={mode === "live" ? liveExt : dropExt} onView={(v) => { liveView.current = v; }} />;
                   return (
                     <div className={`edit ${mode}`} onContextMenu={(e) => { if ((e.target as HTMLElement).closest(".cm-editor")) { e.preventDefault(); setCtx({ x: e.clientX, y: e.clientY, at: liveView.current?.posAtCoords({ x: e.clientX, y: e.clientY }) ?? null }); } }}>
                       {mode === "live" ? <div className="livecol">
-                        <PropsEditor props={liveProps} sealed={note.sealed} onChange={setProps}
+                        <PropsEditor props={liveProps} sealed={note.sealed || ro} onChange={setProps}
                           choices={(k) => valuesIn(items.filter((i) => i.type === "md"), k)}
                           ask={(title, value, ok, run) => setAsk({ title, label: "Value", value, ok, run: (v) => v.trim() && run(v.trim()) })} />
                         {editor}
@@ -683,7 +701,7 @@ export function App() {
                     </div>
                   );
                 })()}
-                {current && t !== "md" && <FileView path={current} text={plain} look={look} onChange={(text) => typed(current, text)} media={mediaFor} apps={apps}
+                {current && t !== "md" && <FileView path={current} text={plain} look={look} readOnly={ro} onChange={(text) => typed(current, text)} media={mediaFor} apps={apps}
                   onApp={(app, copy) => { const label = apps.find((a) => a.name === app)?.label ?? app;
                     api.openIn(app, current, copy).then((r) => { window.open(r.url, label);  /* named: the Launcher opens it as that app's window */ show({ title: copy ? `Copied to ${label}` : `Opened in ${label}`, detail: copy ? `${r.folder}/${r.file} · not in the hub` : `${label} works in ${hub?.name ?? "the hub"}`, state: "done" }); }, fail); }} />}
               </div>
@@ -718,7 +736,7 @@ export function App() {
           </Panel>
         )}
         {page === "views" && (
-          <ViewsPage items={items} onOpen={(p) => open(p)} fail={fail}
+          <ViewsPage items={items} onOpen={(p) => open(p)} fail={fail} readOnly={ro}
             ask={(title, value, ok, run) => setAsk({ title, label: "Name", value, ok, run: (n) => n.trim() && run(n.trim()) })} />
         )}
         </div>}
@@ -739,7 +757,13 @@ export function App() {
           <p className="settings-note">Nothing here to change yet: this is how Malachite works today.</p>
         </> },
         { id: "editor", label: "Editor", icon: "file-code", body: <EditorSettingsPane settings={editor} onSettings={setEditor} lintNote="Julia and Python, by the hub's running session" /> },
-        { id: "hub", label: "Hub", icon: "folder", body: hub
+        { id: "hub", label: "Hub", icon: "folder", body: hub && ro
+          ? <SettingsSection title={hub.name}>
+            <SettingRow label="An example" hint={`${locked}: its settings are the example's own, and it keeps no versions`}>
+              <Key size="sm" onClick={() => { setSettings(null); copyTo(); }}>Copy it…</Key>
+            </SettingRow>
+          </SettingsSection>
+          : hub
           ? <HubSettings hub={kitHub({ ...hub, shown: hub.shown })} values={{ author: hub.author, keep: hub.keep, ignore: hub.ignore }}
             onSet={(k, v) => api.hubSet(k as "author" | "keep" | "ignore", String(v)).then(setHub, fail)}
             onRename={() => setAsk({ title: "Rename the hub", label: "Name", value: hub.name, ok: "Rename", note: "The folder keeps its name; apps show this one.",
@@ -796,7 +820,7 @@ function CsvPlot({ text }: { text: string }) {
 
 /** A file that isn't a note: another app's (its name and type), an image, or text in the kit's editor
  *  with its language, linted and completed by the hub's session for Julia and Python. */
-function FileView({ path, text, look, onChange, media, apps, onApp }: { path: string; text: string | null; look: CodeLook; onChange: (t: string) => void; media: (p: string, alt: string) => React.ReactNode; apps: { name: string; label: string }[]; onApp: (app: string, copy: boolean) => void }) {
+function FileView({ path, text, look, readOnly, onChange, media, apps, onApp }: { path: string; text: string | null; look: CodeLook; readOnly?: boolean; onChange: (t: string) => void; media: (p: string, alt: string) => React.ReactNode; apps: { name: string; label: string }[]; onApp: (app: string, copy: boolean) => void }) {
   const t = typeOf(path), owner = OWNER[t], language = languageFor(path);
   const app = owner && apps.find((a) => a.label === owner || a.name === owner.toLowerCase());
   const session = language.runtime === "julia" || language.runtime === "python" ? SESSIONS[language.runtime] : undefined;
@@ -806,14 +830,14 @@ function FileView({ path, text, look, onChange, media, apps, onApp }: { path: st
         <div className="fcard"><FileGlyph path={path} size={20} /><b>{nameOf(path)}</b>
           <small>{app ? `${owner}'s file: open it there on this hub, or copy it out to work on it alone.` : owner ? `${owner} draws this once it is installed (paperboat app install ${owner.toLowerCase()}); until then Malachite shows its text.` : mediaOf(path) ? `a ${mediaOf(path) === "image" ? "picture" : mediaOf(path)} in the hub` : "a file in the hub"}</small>
           {app && <span className="fcard-keys">
-            <Key size="sm" icon="link-external" onClick={() => onApp(app.name, false)} title={`${owner} opens this hub and this file; what you change is in the hub`}>Open in {owner}</Key>
+            {!readOnly && <Key size="sm" icon="link-external" onClick={() => onApp(app.name, false)} title={`${owner} opens this hub and this file; what you change is in the hub`}>Open in {owner}</Key>}
             <Key size="sm" icon="copy" onClick={() => onApp(app.name, true)} title={`A copy in ${owner}'s own folder, outside the hub; the hub's file stays as it is`}>Copy to {owner}</Key>
           </span>}</div>
       )}
       {mediaOf(path) && media(path, "")}
       {t === "csv" && text !== null && <CsvPlot text={text} />}
       {text !== null && (
-        <div className="fedit"><Editor key={path} value={text} language={language} session={session} settings={look.settings} appTheme={look.appTheme} ariaLabel={`${nameOf(path)}, ${language.label}`} onChange={onChange} /></div>
+        <div className="fedit"><Editor key={path} value={text} language={language} session={session} settings={look.settings} appTheme={look.appTheme} ariaLabel={`${nameOf(path)}, ${language.label}`} readOnly={readOnly} onChange={onChange} /></div>
       )}
     </div>
   );

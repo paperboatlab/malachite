@@ -14,7 +14,7 @@ import { Index } from "./index.ts";
 import { bodyHash, parse, type Lang } from "./note.ts";
 import { NoSession, Sessions } from "./sessions.ts";
 import { History } from "./history.ts";
-import { Hub, HubError, SCHEMA, detach, type HubKey } from "./hub.ts";
+import { Hub, HubError, SCHEMA, detach, exampleAbove, type HubKey } from "./hub.ts";
 import { addRecent, conflictsIn, defaultFolder, dropRecent, forget, hubAbove, infos, placeOf, recent, remember, saveSettings, settings, tilde, isScale, isTheme } from "./hubs.ts";
 
 export const DEFAULT_PORT = 30474;   // Malachite's home port (paperboat/apps.toml); other hubs get --port from the CLI (30500–30599)
@@ -32,7 +32,7 @@ const UPLOAD_MAX = 2 ** 31;   // 2 GiB: a video from a lab camera, not a disk im
 /** What is open: one hub with its history, index and sessions; `close` ends them (and saves the history). */
 type Open = { hub: Hub; history: History; index: Index; sessions: Sessions; saveSoon: () => void; holdSave: () => void; close: () => void };
 /** What the page works in (the kit's `Workspace`): Malachite works in hubs only; null is the Start page. */
-export type Workspace = { kind: "hub"; root: string; name: string; hub: string } | null;
+export type Workspace = { kind: "hub"; root: string; name: string; hub: string; example?: { id: string } } | null;
 
 /** `ask`: a plain folder the page offers to make a hub (NotAHub) instead of making it one unasked. */
 export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new Control(), ask?: string) {
@@ -45,10 +45,10 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
     // holds the event loop)
     const doing = (detail: string) => emit({ type: "opening", detail });
     const hub = new Hub(dir);
-    remember(hub.id, hub.root);   // $PAPERBOAT_HOME/hubs.toml: every app's list of hubs
-    // while this serves the hub, `paperboat hub move` refuses to move it from under us
+    remember(hub.id, hub.root);   // $PAPERBOAT_HOME/hubs.toml: every app's list of hubs (an example: never)
+    // while this serves the hub, `paperboat hub move` refuses to move it from under us (an example is no hub to move)
     const serving = path.join(hub.root, ".malachite", "serving.pid");
-    fs.writeFileSync(serving, String(process.pid));
+    if (!hub.example) fs.writeFileSync(serving, String(process.pid));
     // the history: other machines' pasts first, then what changed while no Malachite was watching
     doing("Reading the history");
     const history = new History(hub);
@@ -85,14 +85,15 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
       watcher.close(); clearTimeout(timer); clearTimeout(saveTimer); clearTimeout(packTimer);
       sessions.stop();   // this hub's sessions end; the daemon connection stays for the next hub
       try { history.save(); history.pack(); } catch { /* the next open saves it */ }
-      try { if (fs.readFileSync(serving, "utf8") === String(process.pid)) fs.rmSync(serving); } catch { /* gone */ }
+      try { if (!hub.example && fs.readFileSync(serving, "utf8") === String(process.pid)) fs.rmSync(serving); } catch { /* gone */ }
     };
     return { hub, history, index, sessions, saveSoon, holdSave: () => clearTimeout(saveTimer), close };
   };
 
   let cur: Open | null = null;
   process.on("exit", () => cur?.close());
-  const workspace = (): Workspace => (cur ? { kind: "hub", root: cur.hub.root, name: cur.hub.name, hub: cur.hub.id } : null);
+  // an example says so: the page is read-only there and shows its banner, however it was opened
+  const workspace = (): Workspace => (cur ? { kind: "hub", root: cur.hub.root, name: cur.hub.name, hub: cur.hub.id, ...(cur.hub.example ? { example: cur.hub.example } : {}) } : null);
   /** Switches the hub at runtime (null: none, the Start page): the new one opens before the old one closes,
    *  so a hub that can't open leaves the page where it was. */
   const switchTo = (dir: string | null) => {
@@ -126,6 +127,7 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
       // a file's bytes (a picture dropped in a note, an edited picture): before the JSON body is read
       if (req.method === "POST" && url.pathname === "/api/upload") {
         const { hub, index } = need();
+        hub.writable();
         const p = await upload(req, hub, q("path"), url.searchParams.get("replace") === "1");
         index.update(p);
         return send(res, 200, { path: p });
@@ -150,6 +152,8 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
           const abs = path.resolve(typed.replace(/^~(?=$|[\\/])/, os.homedir()));
           if (!fs.existsSync(abs)) { dropRecent({ kind: "hub", path: abs }); dropRecent({ kind: "file", path: abs }); throw new HubError(`${tilde(abs)} isn't there`, 404); }
           const isFile = fs.statSync(abs).isFile(), folder = isFile ? path.dirname(abs) : abs;
+          const inExample = exampleAbove(folder);
+          if (!hubAbove(folder) && body.make === true && inExample) throw new HubError(`${path.basename(folder)} is in the example ${inExample.id}: copy it to change it`, 403);
           const root = hubAbove(folder) ?? (body.make === true ? folder : null);
           // Malachite works in hubs only: a plain folder asks to become one (the page's NotAHub)
           if (!root) return send(res, 409, { error: `${path.basename(folder)} isn't a hub`, notHub: { name: path.basename(folder), path: folder } });
@@ -193,22 +197,24 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
         // user keeps hubs (into the hub itself would nest one hub in another)
         case "GET /api/examples": return send(res, 200, await paperboat(["example", "list", "--app", "malachite"]).catch(() => []));
         case "POST /api/examples/open": {
-          const to = "to" in body ? body.to : cur && path.dirname(cur.hub.root);
+          const to = "to" in body ? body.to : cur && !cur.hub.example && path.dirname(cur.hub.root);   // never into the examples' folder
           return send(res, 200, await paperboat(["example", "open", exampleId(body.id), ...(to == null ? [] : ["--to", folderArg(to)])]));
         }
         // the banner's Copy: into <to>/<its folder>, made a hub of its own, then opened in a new window
         case "POST /api/examples/copy": {
-          const copy = await paperboat(["example", "copy", exampleId(body.id), "--to", folderArg(body.to)]);
+          const to = folderArg(body.to), within = exampleAbove(to);
+          if (within) throw new HubError(`not into an example (${within.id}): copy it to a folder of yours`);
+          const copy = await paperboat(["example", "copy", exampleId(body.id), "--to", to]);
           detach(copy.path);
           return send(res, 200, { ...copy, session: await paperboat(["app", "open", "malachite", copy.path]) });
         }
       }
       const { hub, history, index, sessions, saveSoon, holdSave } = need();
-      const hubInfo = () => ({ ...hub.conf, root: hub.root, shown: tilde(hub.root), place: placeOf(hub.root), conflicts: conflictsIn(hub.root) });
+      const hubInfo = () => ({ ...hub.conf, root: hub.root, shown: tilde(hub.root), place: placeOf(hub.root), conflicts: conflictsIn(hub.root), ...(hub.example ? { example: hub.example } : {}) });
       switch (route) {
         case "GET /api/hub": return send(res, 200, hubInfo());
         case "POST /api/hub/config": { hub.set(String(body.key) as HubKey, String(body.value ?? "")); history.excludes(); saveSoon(); return send(res, 200, hubInfo()); }
-        case "GET /api/versions": return send(res, 200, { ok: history.ok, versions: history.versions(url.searchParams.get("path") ?? "") });
+        case "GET /api/versions": return send(res, 200, { ok: history.ok, example: !!hub.example, versions: history.versions(url.searchParams.get("path") ?? "") });
         case "POST /api/versions/restore": {
           holdSave();
           const id = history.restore(String(body.id), String(body.path ?? ""));
@@ -218,6 +224,8 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
         // a file another app draws: open it there on this hub (the app works in the hub), or copy it out
         case "POST /api/apps/open": {
           const app = String(body.app), rel = String(body.path), copy = !!body.copy;
+          // the other app would work in the example's folder: a copy of the file instead
+          if (!copy && hub.example) throw new HubError(`${hub.name} is an example: copy the file to ${app} instead`, 403);
           if (!(await installedApps()).some((a) => a.name === app)) throw new HubError(`${app} is not installed · paperboat app install ${app}`, 409);
           if (!fs.statSync(hub.resolve(rel)).isFile()) throw new HubError(`${rel} is not a file`);
           let folder = hub.root, open = rel;

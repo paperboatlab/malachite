@@ -2,7 +2,7 @@
 // their settings, one command per control on the Launcher's Hubs page (paperboat#16). Words, never Git.
 import fs from "node:fs";
 import path from "node:path";
-import { Hub, HubError, KEEP, peek, type HubKey } from "./hub.ts";
+import { Hub, HubError, KEEP, exampleAbove, peek, type HubKey } from "./hub.ts";
 import { History } from "./history.ts";
 import { defaultFolder, find, forget, infos, remember, tilde, type HubInfo, type Place } from "./hubs.ts";
 
@@ -24,6 +24,12 @@ function holds(root: string) {
   return { notes: n(/\.md$/), runs: new Set(files.filter((f) => f.startsWith("runs/")).map((f) => f.split("/")[1])).size, models: n(/\.(mo|psf|pst)$/), files: files.length, bytes };
 }
 const size = (b: number) => (b < 1e6 ? `${Math.round(b / 1e3)} kB` : b < 1e9 ? `${(b / 1e6).toFixed(1)} MB` : `${(b / 1e9).toFixed(1)} GB`);
+
+/** An example where it is is no hub of the user's: never added to the list, nor made a hub inside. */
+function notExample(dir: string) {
+  const x = exampleAbove(dir);
+  if (x) throw new HubError(`${tilde(dir)} is the example ${x.id}, read-only · paperboat example copy ${x.id} --to <folder> makes a hub of it`, 403);
+}
 
 export function run(argv: string[]): number {
   const json = argv.includes("--json");
@@ -63,6 +69,7 @@ export function run(argv: string[]): number {
       if (flag("--cloud")) throw new HubError("Google Drive hubs come with Malachite's Drive sync (paperboat#16); make it here and move it later");
       const dir = path.resolve(flag("--in") ?? defaultFolder(name));
       if (peek(dir)) throw new HubError(`${tilde(dir)} is a hub already · paperboat hub add ${tilde(dir)}`, 409);
+      notExample(dir);
       fs.mkdirSync(dir, { recursive: true });
       const hub = new Hub(dir);
       if (hub.name !== name) hub.set("name", name);
@@ -73,6 +80,7 @@ export function run(argv: string[]): number {
     case "add": {
       const dir = path.resolve(need(0, "folder"));
       if (!fs.existsSync(dir) || !peek(dir)) throw new HubError(`${tilde(dir)} is not a hub · paperboat hub new <name> --in ${tilde(dir)} makes it one`);
+      notExample(dir);
       const hub = new Hub(dir);
       remember(hub.id, hub.root);
       out({ id: hub.id, name: hub.name, path: hub.root }, () => console.log(`added ${hub.name} (${tilde(hub.root)})`));

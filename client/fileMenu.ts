@@ -18,11 +18,14 @@ export type FileActions = {
   backlinks: (p: string) => void;
   backlinkCount: (p: string) => number;
   sealed: (p: string) => boolean;
+  /** Why nothing in the hub can change (an example where it is: copy it to change it), or undefined. */
+  locked?: string;
 };
 
 /** `tab`: for a tab's menu, which leaves out the Open group (the tab is open). */
 export function fileMenu(e: FileEntry | undefined, a: FileActions, tab = false): MenuEntry[] {
-  if (!e) return [{ id: "new", label: "New note", shortcut: "Ctrl N", icon: "new-file", run: () => a.newNote("") }, { id: "folder", label: "New folder", icon: "new-folder", run: () => a.newFolder("") }];
+  const ro = a.locked ? { disabled: true, why: a.locked } : {};   // a change greyed with why
+  if (!e) return [{ id: "new", label: "New note", shortcut: "Ctrl N", icon: "new-file", run: () => a.newNote(""), ...ro }, { id: "folder", label: "New folder", icon: "new-folder", run: () => a.newFolder(""), ...ro }];
   const dir = e.kind === "folder", t = typeOf(e.path), owner = OWNER[t], name = e.name.replace(/\.md$/, "");
   const items: MenuEntry[] = [];
   if (!dir && !tab) {
@@ -30,20 +33,20 @@ export function fileMenu(e: FileEntry | undefined, a: FileActions, tab = false):
     items.push({ id: "side", label: "Open to the side", shortcut: "Ctrl Enter", run: () => a.open(e.path, true) });
     if (owner) items.push({ id: "in", label: `Open in ${owner}`, icon: "link-external", disabled: true, why: `${owner} isn't installed yet`, run: () => {} });
   } else if (dir) {
-    items.push({ id: "new", label: "New note here", shortcut: "Ctrl N", run: () => a.newNote(e.path) });
-    items.push({ id: "folder", label: "New folder here", run: () => a.newFolder(e.path) });
+    items.push({ id: "new", label: "New note here", shortcut: "Ctrl N", run: () => a.newNote(e.path), ...ro });
+    items.push({ id: "folder", label: "New folder here", run: () => a.newFolder(e.path), ...ro });
   }
   if (t === "md") {
-    items.push("-", { group: "Malachite" }, { id: "seal", label: "Seal…", icon: "lock", disabled: a.sealed(e.path), why: "It is sealed", run: () => a.seal(e.path) });
+    items.push("-", { group: "Malachite" }, { id: "seal", label: "Seal…", icon: "lock", disabled: a.sealed(e.path), why: "It is sealed", run: () => a.seal(e.path), ...ro });
   } else if (owner) {
     items.push("-", { group: owner }, { id: "app", label: owner === "Simplicial" ? "Run the station" : owner === "Julix" ? "Run all cells" : "Simulate", disabled: true, why: `${owner} isn't installed yet`, run: () => {} });
   }
-  items.push("-", { id: "rename", label: "Rename…", shortcut: "F2", run: () => a.rename(e.path) });
+  items.push("-", { id: "rename", label: "Rename…", shortcut: "F2", run: () => a.rename(e.path), ...ro });
   items.push("-");
   if (!dir) items.push({ id: "link", label: `Copy link  [[${name}]]`, icon: "copy", run: () => a.copy(`[[${name}]]`, "Link") });
   items.push({ id: "path", label: "Copy path", icon: "copy", run: () => a.copy(e.path, "Path") });
   items.push({ id: "reveal", label: "Reveal in file manager", run: () => a.reveal(e.path) });
   if (!dir) items.push("-", { id: "graph", label: "Show in graph", run: () => a.graph(e.path) }, { id: "back", label: `Backlinks  ${a.backlinkCount(e.path)}`, run: () => a.backlinks(e.path) });
-  items.push("-", { id: "trash", label: "Move to trash", shortcut: "Del", run: () => a.trash(e.path) });
+  items.push("-", { id: "trash", label: "Move to trash", shortcut: "Del", run: () => a.trash(e.path), ...ro });
   return items[0] === "-" ? items.slice(1) : items;
 }

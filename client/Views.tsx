@@ -15,7 +15,8 @@ const isView = (p: string) => /^views\/[^/]+\.toml$/.test(p);
 const short = (d: number) => new Date(d).toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" });
 const initials = (s: string) => s.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";
 
-export function ViewsPage({ items, onOpen, ask, fail }: { items: Item[]; onOpen: (p: string) => void; ask: Ask; fail: (e: Error) => void }) {
+/** `readOnly` (an example where it is): a view changes on the page only, never saved, and no card moves. */
+export function ViewsPage({ items, onOpen, ask, fail, readOnly }: { items: Item[]; onOpen: (p: string) => void; ask: Ask; fail: (e: Error) => void; readOnly?: boolean }) {
   const files = items.filter((i) => isView(i.path));
   const [views, setViews] = useState<View[]>([]);
   // a view file read again when it changes (anyone's edit); a broken one says where and is left out
@@ -36,7 +37,7 @@ export function ViewsPage({ items, onOpen, ask, fail }: { items: Item[]; onOpen:
     const next = { ...view, ...patch };
     if (!next.path) return setDraft(next);
     setViews((vs) => vs.map((v) => (v.path === next.path ? next : v)));
-    api.save(next.path, viewToml(next)).catch(fail);
+    if (!readOnly) api.save(next.path, viewToml(next)).catch(fail);
   };
   const save = (name: string) => {
     const path = viewPath(name, (p) => files.some((f) => f.path === p)), next = { ...view, name, path };
@@ -58,7 +59,7 @@ export function ViewsPage({ items, onOpen, ask, fail }: { items: Item[]; onOpen:
   return (
     <Panel name={view.name} count={`${shown.length} notes · ${view.path ?? "not saved"}`} className="views"
       tools={<>
-        {!view.path && <Key size="sm" onClick={() => ask("Save view", view.name === DEFAULT.name && views.length ? "" : view.name, "Save", save)}>Save view</Key>}
+        {!view.path && !readOnly && <Key size="sm" onClick={() => ask("Save view", view.name === DEFAULT.name && views.length ? "" : view.name, "Save", save)}>Save view</Key>}
         <MenuChip label="Views" menu={picker}>Views<Icon name="chevron-down" size={12} /></MenuChip>
       </>}>
       <div className="vbar">
@@ -75,17 +76,17 @@ export function ViewsPage({ items, onOpen, ask, fail }: { items: Item[]; onOpen:
         </span>
       </div>
       {shown.length === 0 ? <p className="empty-state">No note matches this view.</p>
-        : view.show === "board" ? <Board items={shown} view={view} onOpen={onOpen} onMove={(p, v) => api.prop(p, view.group, v).catch(fail)} />
+        : view.show === "board" ? <Board items={shown} view={view} onOpen={onOpen} onMove={readOnly ? undefined : (p, v) => api.prop(p, view.group, v).catch(fail)} />
         : view.show === "list" ? <List items={shown} onOpen={onOpen} />
         : <Timeline items={shown} view={view} onOpen={onOpen} />}
     </Panel>
   );
 }
 
-function Card({ it, onOpen }: { it: Item; onOpen: (p: string) => void }) {
+function Card({ it, onOpen, fixed }: { it: Item; onOpen: (p: string) => void; fixed?: boolean }) {
   const sealed = !!it.props.sealed, d = dayOf(it, "created");
   return (
-    <div className="ic2" draggable={!sealed} title={sealed ? "Sealed: it stays where it is" : undefined}
+    <div className="ic2" draggable={!sealed && !fixed} title={sealed ? "Sealed: it stays where it is" : undefined}
       onDragStart={(e) => { e.dataTransfer.setData("text/x-malachite-note", it.path); e.dataTransfer.effectAllowed = "move"; }}
       onClick={() => onOpen(it.path)} onKeyDown={(e) => e.key === "Enter" && onOpen(it.path)} role="button" tabIndex={0}>
       <div className="top"><FileGlyph path={it.path} size={14} />{first(it, "kind") || "note"}{sealed ? " · sealed" : ""}{d !== null && <small>{short(d)}</small>}</div>
@@ -95,7 +96,8 @@ function Card({ it, onOpen }: { it: Item; onOpen: (p: string) => void }) {
   );
 }
 
-function Board({ items, view, onOpen, onMove }: { items: Item[]; view: View; onOpen: (p: string) => void; onMove: (p: string, v: string) => void }) {
+/** No `onMove`: the cards stay where they are (an example). */
+function Board({ items, view, onOpen, onMove }: { items: Item[]; view: View; onOpen: (p: string) => void; onMove?: (p: string, v: string) => void }) {
   const cols = columnsOf(items, view);
   const [over, setOver] = useState<string | null>(null);
   return (
@@ -104,11 +106,11 @@ function Board({ items, view, onOpen, onMove }: { items: Item[]; view: View; onO
         const its = items.filter((i) => (first(i, view.group) || NONE) === c);
         return (
           <div key={c} className={`col${over === c ? " over" : ""}`}
-            onDragOver={(e) => { if (e.dataTransfer.types.includes("text/x-malachite-note")) { e.preventDefault(); setOver(c); } }}
+            onDragOver={(e) => { if (onMove && e.dataTransfer.types.includes("text/x-malachite-note")) { e.preventDefault(); setOver(c); } }}
             onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(null); }}
-            onDrop={(e) => { e.preventDefault(); setOver(null); const p = e.dataTransfer.getData("text/x-malachite-note"); const it = items.find((i) => i.path === p); if (it && (first(it, view.group) || NONE) !== c) onMove(p, c === NONE ? "" : c); }}>
+            onDrop={(e) => { e.preventDefault(); setOver(null); const p = e.dataTransfer.getData("text/x-malachite-note"); const it = items.find((i) => i.path === p); if (it && onMove && (first(it, view.group) || NONE) !== c) onMove(p, c === NONE ? "" : c); }}>
             <header>{c}<small>{its.length}</small></header>
-            {its.map((i) => <Card key={i.path} it={i} onOpen={onOpen} />)}
+            {its.map((i) => <Card key={i.path} it={i} onOpen={onOpen} fixed={!onMove} />)}
           </div>
         );
       })}

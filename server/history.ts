@@ -22,8 +22,9 @@ export class History {
   constructor(hub: Hub) {
     this.hub = hub;
     this.gitDir = path.join(paperboatHome(), "hubs", hub.id, "git");
-    let ok = true;
-    try { execFileSync("git", ["--version"], { stdio: "ignore" }); } catch { ok = false; }   // no Git: no history, the hub still works
+    // no Git: no history, the hub still works; an example has none (it changes in its repository, never here)
+    let ok = !hub.example;
+    if (ok) try { execFileSync("git", ["--version"], { stdio: "ignore" }); } catch { ok = false; }
     this.ok = ok;
     if (!ok) return;
     if (!fs.existsSync(path.join(this.gitDir, "HEAD"))) {
@@ -84,6 +85,8 @@ export class History {
 
   /** A file or folder (or the whole hub) as it was in a version; the current one stays a version too. */
   restore(id: string, rel = ""): string | null {
+    this.hub.writable();
+    if (!this.ok) throw new Error("this hub keeps no versions");
     if (!/^[0-9a-f]{7,40}$/.test(id)) throw new Error(`no version ${id}`);
     this.save("Before a restore");
     this.git("checkout", id, "--", rel || ".");
