@@ -82,8 +82,11 @@ export const api = {
   manageRuntimes: () => call("POST", "/api/launcher", {}),
   /** The examples Paperboat has for Malachite (paperboat example list); [] without the CLI. */
   examples: () => call<Example[]>("GET", "/api/examples"),
-  /** Open example: its copy in $PAPERBOAT_HOME/examples, in a new Paperboat window. */
-  openExample: (id: string) => call("POST", "/api/examples/open", { id }),
+  /** Open example: where it is, in a new Paperboat window whose banner offers to copy it to `to` (left out: the
+   *  open hub's parent folder; null: none, the banner asks where). */
+  openExample: (id: string, to?: string | null) => call("POST", "/api/examples/open", { id, to }),
+  /** The banner's Copy: into <to>/<its folder>, a hub of its own, opened in a new window. */
+  copyExample: (id: string, to: string) => call<{ path: string }>("POST", "/api/examples/copy", { id, to }),
   runtimes: () => call<Peek>("GET", "/api/runtimes"),
   ask: (lang: Lang, op: string, args: Record<string, unknown>) => call<unknown>("POST", "/api/ask", { lang, op, args }),
   /** A file's bytes; `v` (its mtime) makes a changed file load again. */

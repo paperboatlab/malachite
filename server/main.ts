@@ -14,7 +14,7 @@ import { Index } from "./index.ts";
 import { bodyHash, parse, type Lang } from "./note.ts";
 import { NoSession, Sessions } from "./sessions.ts";
 import { History } from "./history.ts";
-import { Hub, HubError, SCHEMA, type HubKey } from "./hub.ts";
+import { Hub, HubError, SCHEMA, detach, type HubKey } from "./hub.ts";
 import { addRecent, conflictsIn, defaultFolder, dropRecent, forget, hubAbove, infos, placeOf, recent, remember, saveSettings, settings, tilde, isScale, isTheme } from "./hubs.ts";
 
 export const DEFAULT_PORT = 30474;   // Malachite's home port (paperboat/apps.toml); other hubs get --port from the CLI (30500–30599)
@@ -187,11 +187,20 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
         case "GET /api/about": return send(res, 200, { format: SCHEMA, paperboat: await paperboatVersion() });
         case "POST /api/launcher": { await paperboat(["launcher", "--page", "runtimes"]); return send(res, 200, {}); }   // Manage runtimes… (paperboat#69)
         case "GET /api/apps": return send(res, 200, await installedApps().catch(() => []));
-        // Ctrl+K's Open example: <name> (paperboat#72): none without the CLI; opening makes a copy and a window
+        // Ctrl+K's Open example: <name> (paperboat#72, #75): none without the CLI. It opens where it is (the
+        // examples checkout or GitHub's cache) in a new window, whose banner offers to copy it to `to`: the page's
+        // (an example's window passes its own on, null: none), else the open hub's parent folder, where the
+        // user keeps hubs (into the hub itself would nest one hub in another)
         case "GET /api/examples": return send(res, 200, await paperboat(["example", "list", "--app", "malachite"]).catch(() => []));
         case "POST /api/examples/open": {
-          if (typeof body.id !== "string" || !body.id) throw new HubError("which example: { id }");
-          return send(res, 200, await paperboat(["example", "open", body.id]));
+          const to = "to" in body ? body.to : cur && path.dirname(cur.hub.root);
+          return send(res, 200, await paperboat(["example", "open", exampleId(body.id), ...(to == null ? [] : ["--to", folderArg(to)])]));
+        }
+        // the banner's Copy: into <to>/<its folder>, made a hub of its own, then opened in a new window
+        case "POST /api/examples/copy": {
+          const copy = await paperboat(["example", "copy", exampleId(body.id), "--to", folderArg(body.to)]);
+          detach(copy.path);
+          return send(res, 200, { ...copy, session: await paperboat(["app", "open", "malachite", copy.path]) });
         }
       }
       const { hub, history, index, sessions, saveSoon, holdSave } = need();
@@ -325,6 +334,18 @@ function stream(res: http.ServerResponse, abs: string, headers: http.OutgoingHtt
     s.pipe(res);
   });
   s.once("error", () => { if (!res.headersSent) send(res, 404, { error: "not found" }); else res.destroy(); });
+}
+
+/** An example's id for the CLI, never an option. */
+function exampleId(v: unknown): string {
+  if (typeof v !== "string" || !v || v.startsWith("-")) throw new HubError("which example: { id }");
+  return v;
+}
+/** A folder for the CLI: a whole path (~ is home), never an option. */
+function folderArg(v: unknown): string {
+  const p = typeof v === "string" ? v.trim().replace(/^~(?=$|[\\/])/, os.homedir()) : "";
+  if (!path.isAbsolute(p) || p.startsWith("-") || p.includes("\0")) throw new HubError("a folder: a whole path, from / or ~");
+  return p;
 }
 
 /** The paperboat CLI with --json: its answer, or its words as an error. */

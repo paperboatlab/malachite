@@ -47,8 +47,8 @@ npm test             # e2e.test.ts too, when paperboatd is on PATH or $PAPERBOAT
 bin/malachite                            # http://127.0.0.1:30474/: Start; Ctrl+K › Open example: Tank Lab
 bin/malachite ~/notes --port 30500       # any folder becomes a hub (.malachite/hub.toml) on first open
 bin/malachite hub list                   # the hubs this machine knows: paperboat hub … once installed
-paperboat example open malachite/tank-lab   # the example hub, copied into $PAPERBOAT_HOME/examples
-bin/malachite hub history tank-lab       # its versions (Git underneath, outside the hub)
+paperboat example open malachite/tank-lab   # the example hub where it is; its banner copies it to a folder of yours
+bin/malachite hub history ~/notes        # a hub's versions (Git underneath, outside the hub)
 ```
 
 Cells need the Paperboat runtime daemon: `paperboatd` on PATH (the `paperboat-cli` package) or

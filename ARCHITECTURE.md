@@ -79,13 +79,23 @@ flowchart LR
   to the hub); the page from `dist/`, the JSON API, Server-Sent Events, a file's bytes
   with byte ranges (a video seeks), and uploads (to a temporary name, then renamed; a replaced file goes to
   the trash, a taken name becomes "<name> (2)"). The examples (paperboat#72) are the CLI's: `GET /api/examples` is
-  `paperboat example list --app malachite` (`[]` without the CLI or when it fails), `POST /api/examples/open` is
-  `paperboat example open <id>` (a copy in `$PAPERBOAT_HOME/examples`, a new window; a failure is the page's
-  toast). Malachite ships no example hub of its own: Tank Lab is `malachite/tank-lab` in paperboat-examples.
+  `paperboat example list --app malachite` (`[]` without the CLI or when it fails), `POST /api/examples/open { id, to? }` is
+  `paperboat example open <id> [--to <folder>]` (paperboat#75: the example where it is, its checkout or GitHub's
+  cache, in a new window). `--to` is where its Copy goes: the page's `to` (an example's window passes its own on,
+  null: none), else the open hub's parent folder, where the user keeps hubs (never the hub itself: one hub
+  would nest in another, its index, history and watcher taking in the example's notes). `POST /api/examples/copy
+  { id, to }` is the banner's Copy: `paperboat example copy <id> --to <to>` (no `--open`), then `hub.ts` `detach`
+  makes the copy a hub of its own (a new id, else it is a second root of the example's id, which hubs.toml keeps
+  one root for and the history's Git folder is named by; and none of the example's `.malachite/` state but
+  `hub.toml`), then `paperboat app open malachite <copy>`. An id or a folder that could be an option is a 400
+  and never reaches the CLI; the CLI's failure is the page's toast. Malachite ships no example hub of its own:
+  Tank Lab is `malachite/tank-lab` in paperboat-examples.
 - `client/`: `App.tsx` (the shell: bar with the menu bar and the hub's workspace well, rail, cards, tabs,
   search, dialogs; one command list (`Command[]`: the kit's `fileMenu` with `hubOnly`, then Edit, View, Note,
   Help, then the kit's `exampleCommands`: Open example: <name>, in menu "examples", which is no menu of the bar, so
-  only Ctrl K lists them; Ctrl K works on Start too) read by `MenuBar`, the command search and `useShortcuts`, chords such as Ctrl Shift O included; Settings (the kit's `Settings`: General, Malachite, Editor, Hub,
+  only Ctrl K lists them; Ctrl K works on Start too; an example's window (the kit's `exampleFromUrl`, read once
+  at load) has the kit's `ExampleBanner` first in `.pages`, its Copy to `?to=`, else a folder asked for as Open
+  folder… asks: the shell's picker or `TypedPath`) read by `MenuBar`, the command search and `useShortcuts`, chords such as Ctrl Shift O included; Settings (the kit's `Settings`: General, Malachite, Editor, Hub,
   Shortcuts; Help › Keyboard shortcuts opens it on Shortcuts); the
   Start page with no hub; Open a hub (`ConnectHub`), our picker over the hub for Open file… and Save as…,
   `NotAHub`, `Unsaved` (the autosave waits while it asks), `TypedPath` in a browser and

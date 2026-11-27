@@ -41,6 +41,15 @@ export function peek(root: string): (Partial<HubConfig> & { schema: number }) | 
   return null;
 }
 
+/** A copy of a hub made a hub of its own (an example's Copy, paperboat#75): a new id, so it isn't a second root
+ *  of the original's (hubs.toml keeps one root per id, and the history's Git folder is by id), and none of what
+ *  the original's machines left in `.malachite/` (the log, the history bundles, outputs, trash, serving.pid). */
+export function detach(root: string) {
+  const dir = path.join(root, ".malachite"), file = configFile(root);
+  for (const f of fs.readdirSync(dir)) if (f !== "hub.toml") fs.rmSync(path.join(dir, f), { recursive: true, force: true });
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace(/^id\s*=.*$/m, `id = "${newId("h")}"`));
+}
+
 export class Hub {
   readonly root: string;
   conf: HubConfig;
