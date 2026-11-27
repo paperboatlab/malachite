@@ -4,7 +4,7 @@ import type { Item } from "../client/api.ts";
 import { DEFAULT, columnsOf, dayOf, itemsOf, readView, viewPath, viewToml } from "../client/views.ts";
 
 const item = (name: string, props: Record<string, string | string[]>, tags: string[] = []): Item =>
-  ({ path: `notes/${name}.md`, name: `${name}.md`, type: "md", title: name, props, tags, links: [], cells: 0, mtime: 0 });
+  ({ path: `notes/${name}.md`, name: `${name}.md`, type: "md", title: name, props, tags, links: [], cells: 0, mtime: 0, size: 0 });
 
 test("a view file is written flat and read back", () => {
   const v = { ...DEFAULT, path: "views/tank.toml", name: "Tank \"level\"", show: "timeline" as const, columns: ["open", "in progress"], until: "due", filter: { project: "tank-level", kind: "" } };

@@ -3,7 +3,7 @@ import type { Scale, Theme } from "@paperboatlab/ui";
 import type { RecentEntry } from "@paperboatlab/ui/workspace";
 export type Entry = { path: string; name: string; kind: "dir" | "file"; size?: number; mtime?: number; children?: Entry[] };
 export type Props = Record<string, string | string[]>;
-export type Item = { path: string; name: string; type: string; title: string; props: Props; tags: string[]; links: string[]; cells: number; mtime: number };
+export type Item = { path: string; name: string; type: string; title: string; props: Props; tags: string[]; links: string[]; cells: number; mtime: number; size: number };
 export type Output =
   | { type: "stream"; name: string; text: string }
   | { type: "display" | "result"; data: Record<string, string> }
@@ -60,7 +60,8 @@ export const api = {
   index: () => call<Item[]>("GET", "/api/index"),
   note: (p: string) => call<NoteData>("GET", `/api/note?path=${q(p)}`),
   text: (p: string) => fetch(`/api/raw?path=${q(p)}`).then((r) => r.text()),
-  save: (p: string, text: string) => call("PUT", `/api/note?path=${q(p)}`, { text }),
+  /** Writes the file; `mtime` is the one it has now (its watcher event says the same). */
+  save: (p: string, text: string) => call<{ mtime?: number }>("PUT", `/api/note?path=${q(p)}`, { text }),
   create: (dir: string, title: string, kind = "note") => call<{ path: string }>("POST", "/api/note", { dir, title, kind }),
   folder: (p: string) => call("POST", "/api/folder", { path: p }),
   move: (from: string, to: string) => call("POST", "/api/move", { from, to }),
@@ -89,6 +90,13 @@ export const api = {
     return j as { path: string };
   },
 };
+
+/** The index with a watcher event's changes: items updated or added, paths gone; the order stays the server's. */
+export function patchItems(items: Item[], updated: Item[], gone: string[]): Item[] {
+  const upd = new Map(updated.map((i) => [i.path, i])), out = new Set(gone);
+  const next = items.filter((i) => !out.has(i.path)).map((i) => { const u = upd.get(i.path); upd.delete(i.path); return u ?? i; });
+  return upd.size ? [...next, ...upd.values()].sort((a, b) => a.path.localeCompare(b.path)) : next;
+}
 
 /** Server-Sent Events: files, cells, runtimes, the log. Reconnects by itself (EventSource does). */
 export function listen(on: (e: any) => void): () => void {
