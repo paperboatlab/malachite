@@ -67,6 +67,11 @@ test("the hub switches at runtime; a plain folder asks; the store follows", asyn
     assert.equal((await call("PUT", "/api/settings", { theme: "dark" })).json.theme, "dark");
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, "settings.json"), "utf8")), { version: 1, theme: "dark", other: 1 });
     assert.equal((await call("PUT", "/api/settings", { theme: "pink" })).status, 400);
+    // the interface scale beside it: 1 when unset, one of three, the theme left alone
+    assert.equal((await call("GET", "/api/settings")).json.scale, 1);
+    assert.equal((await call("PUT", "/api/settings", { scale: 1.25 })).json.scale, 1.25);
+    assert.equal((await call("PUT", "/api/settings", { scale: 0.5 })).status, 400);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, "settings.json"), "utf8")), { version: 1, theme: "dark", other: 1, scale: 1.25 });
     assert.ok(!fs.readdirSync(home).some((f) => f.endsWith(".tmp")));
   } finally { server.close(); }
 });

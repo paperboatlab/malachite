@@ -131,6 +131,9 @@ export function hubAbove(p: string): string | null {
 
 export type RecentEntry = { kind: "folder" | "hub" | "file"; path: string; hub?: string; app?: string; at: number };
 export type Theme = "light" | "dark" | "system";
+export type Scale = 0.75 | 1 | 1.25;
+export const isTheme = (v: unknown): v is Theme => v === "light" || v === "dark" || v === "system";
+export const isScale = (v: unknown): v is Scale => v === 0.75 || v === 1 || v === 1.25;
 const RECENT_MAX = 40;
 
 function readJson(name: string): any {
@@ -161,13 +164,13 @@ export function dropRecent(e?: { kind: RecentEntry["kind"]; path: string }) {
   writeJson("recent.json", { version: 1, recent: recent().filter(keep) });
 }
 
-/** The theme every app starts in ("system" when unset). */
-export function settings(): { version: 1; theme: Theme } {
-  const t = readJson("settings.json")?.theme;
-  return { version: 1, theme: t === "light" || t === "dark" ? t : "system" };
+/** The theme ("system" when unset) and the interface scale (1 when unset) every app starts in. */
+export function settings(): { version: 1; theme: Theme; scale: Scale } {
+  const s = readJson("settings.json");
+  return { version: 1, theme: s?.theme === "light" || s?.theme === "dark" ? s.theme : "system", scale: isScale(s?.scale) ? s.scale : 1 };
 }
 
 /** A change in one app, for every app's next start; what else the file holds stays. */
-export function setTheme(theme: Theme) {
-  writeJson("settings.json", { ...readJson("settings.json"), version: 1, theme });
+export function saveSettings(change: { theme?: Theme; scale?: Scale }) {
+  writeJson("settings.json", { ...readJson("settings.json"), ...change, version: 1 });
 }

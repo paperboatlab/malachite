@@ -5,8 +5,8 @@
 // (@paperboatlab/ui): the menus and the command registry, the workspace parts, the file tree, the editor and
 // its languages, the plot, the canvas layout; Malachite brings the hub, its notes and cells. Files are the record.
 import {
-  About, AppMark, Dialog, Key, Menu, MenuBar, Notifications, Panel, PanelsKey, Rail, Search, Segmented, SettingRow, Settings, SettingsSection, ShortcutList, THEMES, ThemeSetting, Toasts, WindowKeys, isEnabled, readStored, useShortcuts, useTheme, useToasts, writeStored,
-  type Command, type CommandMenu, type Credit, type MenuEntry, type SearchItem, type Theme,
+  About, AppMark, Dialog, Key, Menu, MenuBar, Notifications, Panel, PanelsKey, Rail, ScaleSetting, Search, Segmented, SettingRow, Settings, SettingsSection, ShortcutList, THEMES, ThemeSetting, Toasts, WindowKeys, isEnabled, isScale, readStored, useScale, useShortcuts, useTheme, useToasts, writeStored,
+  type Command, type CommandMenu, type Credit, type MenuEntry, type Scale, type SearchItem, type Theme,
 } from "@paperboatlab/ui";
 import { Editor, EditorSettingsPane, EditorTabs, afterClose, languageFor, livePreview, markdown, orderTabs, tabMenu, useEditorSettings, type Session } from "@paperboatlab/ui/editor";
 import { EditorView } from "@codemirror/view";
@@ -71,6 +71,8 @@ const LAYOUT = { l: [4, 4, 14, 36], m: [20, 4, 26, 36], r: [48, 4, 12, 36] } as 
 export function App() {
   const [theme, setTheme] = useState<Theme>(() => readStored("paperboat.theme", isTheme) ?? "system");
   const shown = useTheme(theme);
+  const [scale, setScale] = useState<Scale>(() => readStored("paperboat.scale", isScale) ?? 1);
+  useScale(scale);
   // Settings › Editor: the note's editor, its cells and the other files
   // ponytail: in this browser's localStorage, as Julix's; the shared settings file once Malachite has a ConfigStore
   const [editor, setEditor] = useEditorSettings(undefined, "malachite.editor");
@@ -126,7 +128,16 @@ export function App() {
   wsRef.current = wsId;
   // the theme every app starts in ($PAPERBOAT_HOME/settings.json); this browser's copy draws the first frame
   useEffect(() => writeStored("paperboat.theme", theme), [theme]);
+  useEffect(() => writeStored("paperboat.scale", scale), [scale]);
   const changeTheme = (t: Theme) => { setTheme(t); api.setTheme(t).catch(fail); };
+  const changeScale = (s: Scale) => { setScale(s); api.setScale(s).catch(fail); };
+  // another app may change them: read again when the window comes back
+  useEffect(() => {
+    const read = () => api.settings().then((v) => { setTheme(v.theme); setScale(v.scale); }, () => {});
+    read();
+    addEventListener("focus", read);
+    return () => removeEventListener("focus", read);
+  }, []);
   useEffect(() => writeStored("malachite.rail.wide", wide), [wide]);
   useEffect(() => { if (wsId) writeStored(`malachite.tabs:${wsId}`, tabs); }, [tabs]);
   useEffect(() => { if (wsId) writeStored(`malachite.tab:${wsId}`, current); }, [current]);
@@ -138,7 +149,6 @@ export function App() {
   const loadWs = useCallback(() => api.workspace().then((r) => { setWs(r.workspace); setHome(r.home); if (r.notHub) setNotHub(r.notHub); }, fail), [fail]);
   useEffect(() => {
     loadWs();
-    api.settings().then((v) => setTheme(v.theme), () => {});
     api.apps().then(setApps, () => setApps([]));
   }, [loadWs]);
   // a file to open once its hub is open: a deep link (/?open=<path in the hub>&mode=edit), a file opened from outside
@@ -642,7 +652,7 @@ export function App() {
 
       {search && <Search items={searchItems} scopes={["All", "Notes", "Files", "Commands"]} placeholder={`Search ${hub?.name ?? "the hub"} or run a command`} onClose={() => setSearch(false)} />}
       {settings && <Settings app="Malachite" key={settings} page={settings} onClose={() => setSettings(null)} pages={[
-        { id: "general", label: "General", icon: "settings-gear", body: <ThemeSetting theme={theme} onTheme={changeTheme} /> },
+        { id: "general", label: "General", icon: "settings-gear", body: <><ThemeSetting theme={theme} onTheme={changeTheme} /><ScaleSetting scale={scale} onScale={changeScale} /></> },
         { id: "malachite", label: "Malachite", icon: "mark-malachite", body: <>
           <SettingsSection title="Notes">
             <SettingRow label="A note opens in" hint="Read and Edit are in the note's foot and in View"><span className="set-fact">Live</span></SettingRow>
