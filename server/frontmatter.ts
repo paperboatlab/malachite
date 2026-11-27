@@ -17,9 +17,13 @@ function unquote(v: string): string {
 const plain = (s: string) => /^[^\s"'[\]{},#:&*!|>%@`-][^"[\]{},#:]*$/.test(s) && s === s.trim() && !/:\s/.test(s);
 const quote = (s: string) => (plain(s) ? s : JSON.stringify(s));
 
+/** A note's front matter: `---` lines first, after a byte order mark if the file has one (an editor on Windows
+ *  writes it; unseen, it hid the note's id and even its seal). Written back, the mark goes: UTF-8 needs none (#76). */
+const FRONT = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+
 /** The front matter and the body after it. A note without one has empty props. */
 export function split(text: string): { props: Props; body: string } {
-  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text);
+  const m = FRONT.exec(text);
   if (!m) return { props: {}, body: text };
   const props: Props = {};
   const lines = m[1].split(/\r?\n/);
@@ -42,7 +46,7 @@ const entry = (k: string, v: string | string[], block = false) =>
 /** `text` with its front matter set to `props`, as an edit would make it: a line stays as written while its
  *  value is the same, a changed one is rewritten, a removed one goes, a new one is added at the end. */
 export function patch(text: string, props: Props): string {
-  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text);
+  const m = FRONT.exec(text);
   const { props: old, body } = split(text);
   if (!m) return join(props, body);
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
