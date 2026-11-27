@@ -85,7 +85,7 @@ flowchart LR
   for the kit's tree), `Graph.tsx` (the hub graph and the local graph, the kit's note graph), `Trash.tsx` (the hub card's trash), `Media.tsx` (pictures, videos, sounds: the kit's player and image
   editor; Read draws them into `.media-slot`s, Live through the kit's `embeds`), `Views.tsx` and `views.ts`
   (board, list, timeline over `views/*.toml`), `Side.tsx` (the Links card, the
-  rows for the kit's runtimes key from `GET /api/runtimes`), `markdown.ts` (marked with wikilinks, embeds and callouts), `callouts.ts` (the callout kinds: aliases, icon, colour role), `files.tsx`, `api.ts`.
+  rows for the kit's runtimes key from `GET /api/runtimes`), `markdown.ts` (marked with wikilinks, embeds and callouts), `callouts.ts` (the callout kinds: aliases, icon, colour role), `noteSize.ts` (the note text's size: the foot's − size +, Ctrl = and Ctrl -, `--note-scale` on the note card), `files.tsx`, `api.ts`.
 - **From the kit** (`@paperboatlab/ui`): the shell's parts (the bar `.win > .bar`, MenuBar and the command
   registry, WindowKeys, Rail, Panel, PanelsKey, Search, Menu, Dialog, Settings, ThemeSetting, ShortcutList, Toasts, Notifications,
   RuntimesKey), the one file workflow (`/workspace`: Start, WorkspaceWell, fileMenu, recentMenu, NotAHub,
