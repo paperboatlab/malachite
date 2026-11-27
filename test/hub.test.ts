@@ -5,7 +5,8 @@ import path from "node:path";
 import { test } from "node:test";
 import { Index } from "../server/index.ts";
 import { split } from "../server/note.ts";
-import { Hub, machine } from "../server/hub.ts";
+import { execFileSync } from "node:child_process";
+import { Hub, ignoreTest, machine } from "../server/hub.ts";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "malachite-"));
 // a Paperboat home of their own: serving a hub records it in hubs.toml and keeps its history there
@@ -66,6 +67,38 @@ test("the tree hides the cache, git and dotfiles; folders first", () => {
   const v = new Hub(tmp());
   for (const f of [".malachite/out/x.json", ".git/HEAD", ".hidden", "b.md", "a/z.md"]) { fs.mkdirSync(path.dirname(path.join(v.root, f)), { recursive: true }); fs.writeFileSync(path.join(v.root, f), ""); }
   assert.deepEqual(v.tree().map((e) => e.name), ["a", "b.md"]);
+});
+
+test("what the hub's ignore names is not in the tree, the index or the watch (#69)", async () => {
+  const v = new Hub(tmp());
+  v.set("ignore", ".malachite/out/ out/ *.tmp stations/*/build/");
+  const w = (p: string) => { fs.mkdirSync(path.dirname(path.join(v.root, p)), { recursive: true }); fs.writeFileSync(path.join(v.root, p), "# x\n"); };
+  for (const f of ["stations/rig/notes/a.md", "stations/rig/build/_deps/eigen/README.md", "model/out/M.fmu", "build/keep.md"]) w(f);
+  assert.deepEqual(v.files().map((f) => f.path), ["build/keep.md", "stations/rig/notes/a.md"]);
+  assert.deepEqual(v.files("stations/rig/build"), []);
+  const index = new Index(v);
+  index.build();
+  assert.deepEqual([...index.items.keys()].sort(), ["build/keep.md", "stations/rig/notes/a.md"]);
+  index.apply(["stations/rig/build", "stations/rig/build/_deps/eigen/README.md"]);   // what the watcher sees during a build
+  assert.ok(!index.items.has("stations/rig/build/_deps/eigen/README.md"));
+  const seen: string[] = [], watch = v.watch((rel) => seen.push(rel));
+  w("stations/rig/build/CMakeCache.txt"); w("stations/rig/notes/b.md");
+  for (let t = 0; t < 100 && !seen.includes("stations/rig/notes/b.md"); t++) await new Promise((r) => setTimeout(r, 50));   // the build's write came first
+  watch.close();
+  assert.ok(seen.includes("stations/rig/notes/b.md") && !seen.some((r) => r.includes("/build/")), seen.join(", "));
+});
+
+test("ignore means what it means to Git", () => {
+  const patterns = "out/ /top.md stations/*/build/ *.tmp docs/**/gen !keep.tmp ?.log";
+  const paths = ["out", "a/out", "a/out/x.md", "top.md", "a/top.md", "stations/rig/build", "stations/rig/build/x", "stations/a/b/build",
+    "x.tmp", "a/x.tmp", "keep.tmp", "docs/gen", "docs/a/b/gen/x", "a.log", "ab.log", "out.md"];
+  const dir = tmp();
+  execFileSync("git", ["init", "-q", dir]);
+  fs.writeFileSync(path.join(dir, ".git", "info", "exclude"), patterns.split(" ").join("\n") + "\n");
+  for (const p of paths) fs.mkdirSync(path.join(dir, p), { recursive: true });   // all folders: what git sees on disk
+  const git = execFileSync("git", ["check-ignore", "--no-index", ...paths.map((p) => `${p}/`)], { cwd: dir, encoding: "utf8" }).split("\n").filter(Boolean).map((p) => p.replace(/\/$/, ""));
+  const ours = ignoreTest(patterns);
+  assert.deepEqual(paths.filter((p) => ours(p, true)), paths.filter((p) => git.includes(p)));
 });
 
 test("the index resolves links and finds backlinks with their context", () => {
