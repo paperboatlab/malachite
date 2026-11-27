@@ -1,5 +1,5 @@
 // The app server's API (server/main.ts), typed for the page.
-import type { Theme } from "@paperboatlab/ui";
+import type { Scale, Theme } from "@paperboatlab/ui";
 import type { RecentEntry } from "@paperboatlab/ui/workspace";
 export type Entry = { path: string; name: string; kind: "dir" | "file"; size?: number; mtime?: number; children?: Entry[] };
 export type Props = Record<string, string | string[]>;
@@ -47,8 +47,9 @@ export const api = {
   recent: () => call<{ version: 1; recent: RecentEntry[] }>("GET", "/api/recent"),
   opened: (p: string) => call("POST", "/api/recent", { path: p }),
   clearRecent: () => call("POST", "/api/recent/clear", {}),
-  settings: () => call<{ version: 1; theme: Theme }>("GET", "/api/settings"),
+  settings: () => call<{ version: 1; theme: Theme; scale: Scale }>("GET", "/api/settings"),
   setTheme: (theme: Theme) => call("PUT", "/api/settings", { theme }),
+  setScale: (scale: Scale) => call("PUT", "/api/settings", { scale }),
   hubForget: (id: string) => call("POST", "/api/hubs/remove", { id }),
   apps: () => call<{ name: string; label: string }[]>("GET", "/api/apps"),
   openIn: (app: string, p: string, copy: boolean) => call<{ url: string; folder: string; file: string }>("POST", "/api/apps/open", { app, path: p, copy }),

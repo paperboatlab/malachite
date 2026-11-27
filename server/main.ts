@@ -15,7 +15,7 @@ import { bodyHash, parse, type Lang } from "./note.ts";
 import { NoSession, Sessions } from "./sessions.ts";
 import { History } from "./history.ts";
 import { Hub, HubError, SCHEMA, type HubKey } from "./hub.ts";
-import { addRecent, conflictsIn, defaultFolder, dropRecent, forget, hubAbove, infos, placeOf, recent, remember, setTheme, settings, tilde } from "./hubs.ts";
+import { addRecent, conflictsIn, defaultFolder, dropRecent, forget, hubAbove, infos, placeOf, recent, remember, saveSettings, settings, tilde, isScale, isTheme } from "./hubs.ts";
 
 export const DEFAULT_PORT = 30474;   // Malachite's home port (paperboat/apps.toml); other hubs get --port from the CLI (30500–30599)
 const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
@@ -179,9 +179,10 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
         case "POST /api/recent/clear": { dropRecent(); return send(res, 200, {}); }
         case "GET /api/settings": return send(res, 200, settings());
         case "PUT /api/settings": {
-          const t = body.theme;
-          if (t !== "light" && t !== "dark" && t !== "system") throw new HubError("theme is light, dark or system");
-          setTheme(t);
+          const { theme, scale } = body;   // either or both
+          if (theme !== undefined && !isTheme(theme)) throw new HubError("theme is light, dark or system");
+          if (scale !== undefined && !isScale(scale)) throw new HubError("scale is 0.75, 1 or 1.25");
+          saveSettings({ ...(theme !== undefined ? { theme } : {}), ...(scale !== undefined ? { scale } : {}) });
           return send(res, 200, settings());
         }
         // About: the hub format and Paperboat's version (null: not installed); never starts paperboatd
