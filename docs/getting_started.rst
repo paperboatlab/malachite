@@ -53,8 +53,8 @@ In a browser, Open folder… and Open file… take a typed path; in a Paperboat 
 system's dialog.
 
 Settings (File › Settings…, the rail's Settings, Ctrl ,) is one window with a page per subject:
-General (the theme, Light, Dark or System, which applies to every Paperboat app; View › Theme
-sets it too), Malachite (how notes open and where cells run), Editor (the code's colours, font,
+General (the theme, Light, Dark or System, and the interface scale, Compact (75 %), Default or Large (125 %), which sizes text, icons and keys alike;
+both apply to every Paperboat app; View › Theme sets the theme too), Malachite (how notes open and where cells run), Editor (the code's colours, font,
 size, tabs, wrapping, completion and lint, for notes, cells and other files; a note's text always
 wraps), Hub (the open hub's name, author, history and folder; with no hub open, Connect to a hub…)
 and Shortcuts.
