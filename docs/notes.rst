@@ -27,6 +27,7 @@ the rest in grey.
 
 The title is optional: without one, the kind's name is the title. A ``+`` or ``-`` after the brackets
 makes the callout fold: ``+`` starts open, ``-`` starts closed, and a click on its title opens or closes it.
+
 Text size
 ---------
 
