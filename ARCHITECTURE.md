@@ -71,7 +71,8 @@ flowchart LR
   hub, or nothing: the Start page); a plain folder answers 409 with `notHub`, as Malachite works in hubs
   only. Opening a hub builds its `Hub`, `History`, `Index`, `Sessions` and watcher (its `files` event says
   what changed, with the items: `changed`, `items`, `gone`, and `tree` when a file came or went, so the page
-  patches its index and asks for the tree only then); the one before closes
+  patches its index and asks for the tree only then; while it opens, `opening` events say what it does, "Reading
+  the history", "Indexing 4 812 files", which the page's Start shows through the kit's `useOpening`); the one before closes
   after (its sessions end, its history is saved, `serving.pid` goes), so a hub that can't open leaves the
   old one open. Every hub route answers 409 while none is open. Another app's file opens there (`paperboat app open <app> <hub> --no-open`,
   then `?open=<path>`: the app works in the hub) or is copied out to `~/Documents/paperboat/<app>/` (no tie

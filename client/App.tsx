@@ -12,7 +12,7 @@ import { Editor, EditorSettingsPane, EditorTabs, afterClose, languageFor, livePr
 import { EditorView } from "@codemirror/view";
 import { FileTree, type FileEntry } from "@paperboatlab/ui/files";
 import { ConnectHub, HubSettings, OpenFile, SaveFile, type Hub as KitHub } from "@paperboatlab/ui/hub";
-import { NotAHub, Start, TypedPath, Unsaved, WorkspaceWell, fileMenu as fileCommands, recentFor, recentMenu, shell, type RecentEntry } from "@paperboatlab/ui/workspace";
+import { NotAHub, Start, TypedPath, Unsaved, WorkspaceWell, baseName, fileMenu as fileCommands, recentFor, recentMenu, shell, useOpening, type RecentEntry } from "@paperboatlab/ui/workspace";
 import { redo, undo } from "@codemirror/commands";
 import { Plot2D, type PlotSeries } from "@paperboatlab/ui/plot";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -125,6 +125,7 @@ export function App() {
   const [ask, setAsk] = useState<Ask | null>(null);
   const [about, setAbout] = useState<{ format?: number; paperboat?: string | null } | null>(null);
   const notes = useToasts();
+  const opener = useOpening();   // a hub on its way: Start, the well and Open a hub say so
   const { toasts, show, dismiss } = notes;
   const fail = useCallback((e: unknown) => show({ title: "Couldn't do that", detail: String((e as Error).message ?? e), state: "failed" }), [show]);
   const currentRef = useRef(current);
@@ -205,6 +206,7 @@ export function App() {
   // live: the hub (switched here or in another tab), files (anyone's changes), cells, sessions and the log
   useEffect(() => listen((e) => {
     if (e.type === "workspace") loadWs();
+    else if (e.type === "opening") opener.detail(e.detail as string);   // what the server is doing: "Indexing 4 812 files"
     else if (e.type === "files") {
       // the server says what changed: the index is patched, the tree asked for only when a file came or went
       const upd = e.items as Item[] | undefined, gone = e.gone as string[] | undefined;
@@ -478,23 +480,26 @@ export function App() {
     setDlg("");
     loadRecent();
   };
-  /** A folder or a file by its path: its hub opens; a plain folder asks to become one (NotAHub). */
+  /** A folder or a file by its path: its hub opens; a plain folder asks to become one (NotAHub). Start, the
+   *  well and Open a hub show it opening until it is open (a big hub indexes first), and a failure in place. */
   const openPath = (p: string, make = false) => {
     flush.current();
-    api.enter({ path: p, make }).then(enter, (e) => {
+    opener.open({ name: baseName(p), path: p }, () => api.enter({ path: p, make }).then(enter)).catch((e) => {
       const nh = (e as { body?: { notHub?: { name: string; path: string } } }).body?.notHub;
-      if (nh) { setDlg(""); setNotHub(nh); } else fail(e);
+      if (nh) { opener.clear(); setDlg(""); setNotHub(nh); } else fail(e);
     });
   };
   /** What is typed and not yet saved asks first (Save, Don't save, Cancel), then `then` runs. */
   const guard = (closing: string | undefined, then: () => void) => {
     if (draft.current && current) setUnsaved({ closing, then }); else then();
   };
-  const switchHub = (id: string) => guard("the hub", () => api.enter({ id }).then(enter, fail));
+  const switchHub = (id: string) => guard("the hub", () => {
+    opener.open({ name: hubs.find((h) => h.id === id)?.name ?? "the hub", hub: id }, () => api.enter({ id }).then(enter)).catch(fail);
+  });
   const closeHub = () => guard("the hub", () => api.enter({}).then(enter, fail));
   const closeFile = () => current && guard(undefined, () => { dropDraft(); closeTabs([current]); });
   const newHub = () => setAsk({ title: "New hub", label: "Name", ok: "Create", note: "It goes in ~/Documents/paperboat, and Malachite works in it.",
-    run: (n) => guard("the hub", () => api.hubNew(n).then(enter, fail)) });
+    run: (n) => guard("the hub", () => { opener.open({ name: n }, () => api.hubNew(n).then(enter)).catch(fail); }) });
   // the system's dialogs in a Paperboat window; in a browser, the path typed
   const openFolder = () => { const sh = shell(); if (sh) sh.pickFolder("Open a hub or a folder").then((p) => p && openPath(p), fail); else setDlg("folder"); };
   const openFile = () => {
@@ -596,7 +601,7 @@ export function App() {
       <header className="bar">
         <span className="lk"><AppMark app="malachite" size={26} idle label="Malachite" /><span className="wm">Malachite</span></span>
         <MenuBar commands={commands} menus={MENUS} />
-        {ws && <WorkspaceWell workspace={ws} home={home} recent={recentItems} hubs={hubs.map(kitHub)} onOpenFolder={openFolder} onConnect={() => setDlg("connect")}
+        {ws && <WorkspaceWell workspace={ws} home={home} recent={recentItems} hubs={hubs.map(kitHub)} opening={opener.opening} onOpenFolder={openFolder} onConnect={() => setDlg("connect")}
           onClose={closeHub} onSwitchHub={switchHub} onNewHub={newHub} />}
         <span className="bend">
           {ws && page === "notes" && <Key kind="primary" icon="new-file" onClick={() => newNote()}>New note</Key>}
@@ -615,7 +620,7 @@ export function App() {
         onFoot={(id) => { if (id === "search") setSearch(true); else if (id === "settings") setSettings("general"); else openAbout(); }} />}
 
       {!ws && <main className="pages"><div className="bay"><section className="panel start" aria-label="Start">
-        {ws === null && <Start app="Malachite" noun="note" nouns="notes" hubs hubOnly recent={recent} home={home}
+        {ws === null && <Start app="Malachite" noun="note" nouns="notes" hubs hubOnly recent={recent} home={home} opening={opener.opening}
           onOpenFolder={openFolder} onOpenFile={openFile} onNew={() => setDlg("connect")} onConnect={() => setDlg("connect")} onNewHub={newHub} onRecent={onRecent} />}
       </section></div></main>}
       {ws && <main className="pages">
@@ -739,7 +744,7 @@ export function App() {
           </SettingsSection> },
         { id: "shortcuts", label: "Shortcuts", icon: "keys", body: <ShortcutList commands={commands} menus={MENUS} /> },
       ]} />}
-      {dlg === "connect" && <ConnectHub app="Malachite" hubOnly hubs={hubs.map(kitHub)} onConnect={switchHub} onNew={newHub} onClose={() => setDlg("")} />}
+      {dlg === "connect" && <ConnectHub app="Malachite" hubOnly hubs={hubs.map(kitHub)} opening={opener.opening} onConnect={switchHub} onNew={newHub} onClose={() => setDlg("")} />}
       {dlg === "open" && ws && <OpenFile what="a note" types={["md"]} kinds="Notes" hub={kitHub(hubs.find((h) => h.id === ws.hub) ?? { id: ws.hub, name: ws.name, shown: ws.root, place: "local" })}
         list={async () => entries} describe={describe} onOpen={(p) => { setDlg(""); open(p); }} onClose={() => setDlg("")} />}
       {dlg === "save" && ws && current && <SaveFile what={typeOf(current) === "md" ? "the note" : "the file"} types={[typeOf(current)]} name={nameOf(current).replace(/\.[^.]+$/, "")}

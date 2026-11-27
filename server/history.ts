@@ -35,7 +35,7 @@ export class History {
 
   private git(...args: string[]): string {
     return execFileSync("git", args, {
-      cwd: this.hub.root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+      cwd: this.hub.root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1 << 30,   // a status of 30 000 new files is past the default 1 MiB
       env: {
         ...process.env, GIT_DIR: this.gitDir, GIT_WORK_TREE: this.hub.root,
         GIT_AUTHOR_NAME: this.hub.author, GIT_AUTHOR_EMAIL: `${this.hub.author}@${machine()}`,

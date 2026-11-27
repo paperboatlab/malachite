@@ -30,10 +30,13 @@ export class Index {
 
   get items(): ReadonlyMap<string, Item> { return this.all; }
 
-  build() {
+  /** `found`: how many files the walk found, before they are read (the page says "Indexing 4 812 files"). */
+  build(found?: (n: number) => void) {
     this.all.clear();
     this.named.clear();
-    for (const f of this.hub.files()) this.update(f.path, path.join(this.hub.root, f.path));   // the walk stays in the hub
+    const files = this.hub.files();
+    found?.(files.length);
+    for (const f of files) this.update(f.path, path.join(this.hub.root, f.path));   // the walk stays in the hub
     this.came = false;
   }
 
