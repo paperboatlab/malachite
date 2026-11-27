@@ -78,10 +78,14 @@ flowchart LR
   then `?open=<path>`: the app works in the hub) or is copied out to `~/Documents/paperboat/<app>/` (no tie
   to the hub); the page from `dist/`, the JSON API, Server-Sent Events, a file's bytes
   with byte ranges (a video seeks), and uploads (to a temporary name, then renamed; a replaced file goes to
-  the trash, a taken name becomes "<name> (2)").
+  the trash, a taken name becomes "<name> (2)"). The examples (paperboat#72) are the CLI's: `GET /api/examples` is
+  `paperboat example list --app malachite` (`[]` without the CLI or when it fails), `POST /api/examples/open` is
+  `paperboat example open <id>` (a copy in `$PAPERBOAT_HOME/examples`, a new window; a failure is the page's
+  toast). Malachite ships no example hub of its own: Tank Lab is `malachite/tank-lab` in paperboat-examples.
 - `client/`: `App.tsx` (the shell: bar with the menu bar and the hub's workspace well, rail, cards, tabs,
   search, dialogs; one command list (`Command[]`: the kit's `fileMenu` with `hubOnly`, then Edit, View, Note,
-  Help) read by `MenuBar`, the command search and `useShortcuts`, chords such as Ctrl Shift O included; Settings (the kit's `Settings`: General, Malachite, Editor, Hub,
+  Help, then the kit's `exampleCommands`: Open example: <name>, in menu "examples", which is no menu of the bar, so
+  only Ctrl K lists them; Ctrl K works on Start too) read by `MenuBar`, the command search and `useShortcuts`, chords such as Ctrl Shift O included; Settings (the kit's `Settings`: General, Malachite, Editor, Hub,
   Shortcuts; Help › Keyboard shortcuts opens it on Shortcuts); the
   Start page with no hub; Open a hub (`ConnectHub`), our picker over the hub for Open file… and Save as…,
   `NotAHub`, `Unsaved` (the autosave waits while it asks), `TypedPath` in a browser and

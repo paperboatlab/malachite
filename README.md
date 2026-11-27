@@ -29,7 +29,6 @@ server/       the app server (Node 22, TypeScript, no dependencies): hub, index,
 docs/         the manual (reStructuredText)
 client/       the page (React, @paperboatlab/ui: tree, editor, plot, canvas; React Flow, marked), built into dist/
 bin/malachite the command
-examples/     tank-lab, a hub to try it on
 test/         unit tests; e2e.test.ts runs a real cell when paperboatd is there
 ```
 
@@ -45,9 +44,10 @@ npm test             # e2e.test.ts too, when paperboatd is on PATH or $PAPERBOAT
 ## Run
 
 ```sh
-bin/malachite examples/tank-lab          # http://127.0.0.1:30474/
+bin/malachite                            # http://127.0.0.1:30474/: Start; Ctrl+K › Open example: Tank Lab
 bin/malachite ~/notes --port 30500       # any folder becomes a hub (.malachite/hub.toml) on first open
 bin/malachite hub list                   # the hubs this machine knows: paperboat hub … once installed
+paperboat example open malachite/tank-lab   # the example hub, copied into $PAPERBOAT_HOME/examples
 bin/malachite hub history tank-lab       # its versions (Git underneath, outside the hub)
 ```
 

@@ -10,8 +10,13 @@ and Python runtimes too.
    paperboat app open malachite [<folder>]      # http://127.0.0.1:30474
    paperboat app stop malachite
 
-A folder named on the command line opens as a hub: its settings are written on first open. The
-``tank-lab`` example hub is a good place to start.
+A folder named on the command line opens as a hub: its settings are written on first open.
+
+To try it on an example hub, press Ctrl K and pick **Open example: Tank Lab** (or run
+``paperboat example open malachite/tank-lab``): Paperboat copies the example into
+``$PAPERBOAT_HOME/examples`` once and opens the copy in a new window. The examples are those of
+`paperboat-examples <https://github.com/paperboatlab/paperboat-examples>`_ that Malachite opens; the list
+needs the Paperboat CLI.
 
 Without a folder, Malachite opens on the **Start** page: Open a hub… (the hubs this machine knows),
 New hub…, Open folder… and Open file…, and the hubs and notes you opened last. Malachite works in hubs
@@ -41,7 +46,7 @@ one (back to Start). The keys:
    * - Ctrl W
      - Close file
    * - Ctrl K
-     - Search the hub or run a command
+     - Search the hub, run a command or open an example (on Start too)
    * - Ctrl B, Ctrl Alt B
      - Show or hide the files and the links
    * - Ctrl ,
