@@ -18,7 +18,7 @@ import { Plot2D, type PlotSeries } from "@paperboatlab/ui/plot";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { join, patch, split } from "../server/frontmatter.ts";
-import { api, listen, type Cell, type Entered, type HubConf, type KnownHub, type Place, type Workspace, type Entry, type Item, type Lang, type Links, type LogEvent, type NoteData, type Props, type Run } from "./api.ts";
+import { api, listen, patchItems, type Cell, type Entered, type HubConf, type KnownHub, type Place, type Workspace, type Entry, type Item, type Lang, type Links, type LogEvent, type NoteData, type Props, type Run } from "./api.ts";
 import { fileMenu, type FileActions } from "./fileMenu.ts";
 import { FileGlyph, OWNER, TEXT, mediaOf, typeOf } from "./files.tsx";
 import { MediaEmbed } from "./Media.tsx";
@@ -109,7 +109,13 @@ export function App() {
   const [cellEls, setCellEls] = useState<{ el: HTMLElement; lang: string; code: string }[]>([]);
   const [embedEls, setEmbedEls] = useState<{ el: HTMLElement; target: string; alt: string; wiki: boolean }[]>([]);
   const [ctx, setCtx] = useState<{ x: number; y: number; at: number | null } | null>(null);
-  const [draft, setDraft] = useState<string | null>(null);
+  // what is typed and not yet saved, and in which file: kept out of React state, so a key redraws the editor
+  // only (not the whole page); the page hears that there is some (`dirty`), and saves 700 ms after the last key
+  const draft = useRef<{ path: string; text: string } | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [front, setFrontState] = useState<{ path: string; text: string } | null>(null);   // the front matter as typed: Live's properties
+  const frontRef = useRef(front);
+  const setFront = (f: { path: string; text: string } | null) => { frontRef.current = f; setFrontState(f); };
   const [links, setLinks] = useState<Links | null>(null);
   const [runs, setRuns] = useState<Record<string, Run>>({});
   const [running, setRunning] = useState<Record<string, boolean>>({});
@@ -166,7 +172,7 @@ export function App() {
     setTabs(wsId ? readStored(`malachite.tabs:${wsId}`, isList) ?? [] : []);
     setCurrent(wsId ? readStored(`malachite.tab:${wsId}`, isStr) ?? null : null);
     setPinned(new Set(wsId ? readStored(`malachite.pinned:${wsId}`, isList) ?? [] : []));
-    setDraft(null); setLog([]); setRuns({}); setTrashOpen(false);
+    dropDraft(); setLog([]); setRuns({}); setTrashOpen(false);
     if (!wsId) { setHub(null); setTree([]); setItems([]); document.title = "Malachite"; return; }
     const go = pending.current;
     pending.current = null;
@@ -184,23 +190,33 @@ export function App() {
     if (!p) { setNote(null); setPlain(null); setLinks(null); return; }
     const t = typeOf(p);
     if (t === "md") {
-      api.note(p).then((n) => { if (currentRef.current === p) { setNote(n); setPlain(null); setDraft(null); } }, fail);
+      api.note(p).then((n) => { if (currentRef.current === p) { setNote(n); setFront(null); setPlain(null); dropDraft(p); } }, fail);
       api.links(p).then((l) => currentRef.current === p && setLinks(l), () => setLinks(null));
     } else {
       setNote(null);
       setLinks(null);
-      if (TEXT.has(t)) api.text(p).then((s) => { if (currentRef.current === p) { setPlain(s); setDraft(null); } }, fail); else setPlain(null);
+      if (TEXT.has(t)) api.text(p).then((s) => { if (currentRef.current === p) { setPlain(s); dropDraft(p); } }, fail); else setPlain(null);
     }
   }, [fail]);
   useEffect(() => { setRuns({}); load(current); }, [current, load]);
+  // another file shows: what was typed in the one before is saved now, to that file
+  useEffect(() => { if (draft.current && draft.current.path !== current) flush.current(); }, [current]);
 
   // live: the hub (switched here or in another tab), files (anyone's changes), cells, sessions and the log
   useEffect(() => listen((e) => {
     if (e.type === "workspace") loadWs();
     else if (e.type === "files") {
-      reload();
-      const c = currentRef.current;
-      if (c && (e.changed as string[]).some((f) => f === c)) setDraft((d) => { if (d === null) load(c); return d; });
+      // the server says what changed: the index is patched, the tree asked for only when a file came or went
+      const upd = e.items as Item[] | undefined, gone = e.gone as string[] | undefined;
+      if (!upd || !gone) reload();
+      else {
+        if (e.tree) api.tree().then(setTree, fail);
+        if (upd.length || gone.length) setItems((its) => patchItems(its, upd, gone));
+      }
+      // the open file changed on disk (another editor, git): it shows again, unless something is typed in it
+      // or the change is this page's own save
+      const c = currentRef.current, it = upd?.find((i) => i.path === c);
+      if (c && (e.changed as string[]).includes(c) && draft.current?.path !== c && !(it && saved.current === `${c}:${it.mtime}`)) load(c);
     } else if (e.type === "cell") {
       const r = e.run as Run;
       if (e.path === currentRef.current) setRuns((m) => ({ ...m, [r.hash]: r }));
@@ -243,19 +259,24 @@ export function App() {
     if (pg === "graph" || pg === "views" || pg === "log") setPage(pg);
   }, []);
 
+  // links resolve by path and name only: the same function while only what is in files changes (a save), so a
+  // note's rendering stays as it is
+  const pathList = useMemo(() => items.map((i) => i.path).join("\n"), [items]);
   const resolve = useMemo(() => {
-    const byName = new Map<string, string>();
-    for (const it of items) { byName.set(it.name.toLowerCase(), it.path); byName.set(nameOf(it.path).toLowerCase(), it.path); }
-    const paths = new Set(items.map((i) => i.path));
-    return (l: string) => (paths.has(l) ? l : paths.has(`${l}.md`) ? `${l}.md` : byName.get(l.toLowerCase()) ?? null);
-  }, [items]);
+    const paths = pathList ? pathList.split("\n") : [], byName = new Map<string, string>();
+    for (const p of paths) { const n = nameOf(p).toLowerCase(); byName.set(n.replace(/\.md$/, ""), p); byName.set(n, p); }
+    const has = new Set(paths);
+    return (l: string) => (has.has(l) ? l : has.has(`${l}.md`) ? `${l}.md` : byName.get(l.toLowerCase()) ?? null);
+  }, [pathList]);
   const allLinks = useMemo(() => hubLinks(items, resolve), [items, resolve]);
 
+  const saved = useRef("");   // "<path>:<mtime>" of this page's last save: its watcher event is not news
   const save = useCallback(async (p: string, text: string) => {
     try {
-      await api.save(p, text);
-      setDraft((d) => (d === text ? null : d));   // typed on while it saved: that stays to save next
-      api.note(p).then((n) => currentRef.current === p && setNote(n), () => {});   // the note as saved (properties, cells)
+      const r = await api.save(p, text);
+      saved.current = `${p}:${r.mtime}`;
+      if (draft.current?.path === p && draft.current.text === text) dropDraft();   // typed on while it saved: that stays to save next
+      if (typeOf(p) === "md") api.note(p).then((n) => currentRef.current === p && setNote(n), () => {});   // the note as saved (properties, cells)
       if (saveNote.current) show({ id: saveNote.current, title: "Saved", detail: p, state: "done" });
       saveNote.current = undefined;
     } catch (e) {
@@ -263,13 +284,31 @@ export function App() {
     }
   }, [show]);
   // save what is typed after a pause (and on Ctrl+S); the file is the record
-  useEffect(() => {
-    if (draft === null || !current || unsaved) return;   // asking Save or Don't save: it waits for the answer
-    const t = setTimeout(() => save(current, draft), 700);
-    return () => clearTimeout(t);
-  }, [draft, current, save, unsaved]);
+  const timer = useRef<number | undefined>(undefined);
+  const unsavedRef = useRef(unsaved);
+  unsavedRef.current = unsaved;
   const flush = useRef(async () => {});
-  flush.current = async () => { if (draft !== null && current) await save(current, draft); };
+  flush.current = async () => { clearTimeout(timer.current); const d = draft.current; if (d) await save(d.path, d.text); };
+  const arm = () => { clearTimeout(timer.current); timer.current = window.setTimeout(() => { if (!unsavedRef.current) flush.current(); }, 700); };   // asking Save or Don't save: it waits for the answer
+  useEffect(() => { if (!unsaved && draft.current) arm(); }, [unsaved]);
+  /** A key in an editor: the text is held, the save armed; the page redraws only when it becomes dirty. */
+  const typed = useCallback((path: string, text: string) => {
+    const was = draft.current;
+    draft.current = { path, text };
+    if (!was) setDirty(true);   // no state set on the other keys: not even one that ends up the same redraws
+    if (typeOf(path) === "md") {   // Live's properties follow the front matter: redrawn only when it changes
+      const m = /^---\r?\n[\s\S]*?\r?\n---(\r?\n|$)/.exec(text), f = m ? m[0] : "", o = frontRef.current;
+      if (!o || o.path !== path || o.text !== f) setFront({ path, text: f });
+    }
+    arm();
+  }, []);
+  /** Nothing typed any more (saved, discarded, or the file shown again); with `path`, only when it was typed there. */
+  function dropDraft(path?: string) {
+    if (path !== undefined && draft.current && draft.current.path !== path) return;
+    clearTimeout(timer.current);
+    draft.current = null;
+    setDirty(false);
+  }
 
   const newNote = useCallback((dir = current ? dirOf(current) : "") => setAsk({
     title: "New note", label: "Title", ok: "Create",
@@ -298,7 +337,7 @@ export function App() {
   // a right click on a tab (REBRAND "Tab menu"): the tab's group, then the file's menu without Open
   const tabItems = (p: string) => {
     const e = entries.find((x) => x.path === p);
-    return tabMenu(p, { tabs: strip, pinned, dirty: (t) => t === current && draft !== null }, {
+    return tabMenu(p, { tabs: strip, pinned, dirty: (t) => t === current && dirty }, {
       close: closeTabs,
       pin: (t, on) => setPinned((s) => { const n = new Set(s); if (on) n.add(t); else n.delete(t); return n; }),
       reveal: (t) => { setPage("notes"); setTrashOpen(false); setHideL(false); setRevealed(t); },
@@ -310,12 +349,12 @@ export function App() {
   useEffect(() => { if (revealed) document.querySelector(`.file-row[title="${CSS.escape(revealed)}"]`)?.scrollIntoView({ block: "nearest" }); }, [revealed]);
 
   // the hub's files as the kit's tree rows
-  const [entries, sizes] = useMemo(() => {
-    const out: FileEntry[] = [], sizes = new Map<string, number>();
+  const entries = useMemo(() => {
+    const out: FileEntry[] = [];
     const conflict = new Set(hub?.conflicts ?? []);   // a sync client's copy: marked so it gets looked at
-    const walk = (es: Entry[], depth: number) => { for (const e of es) { if (e.size !== undefined) sizes.set(e.path, e.size); out.push({ path: e.path, name: e.name, depth, kind: e.kind === "dir" ? "folder" : "file", ...(conflict.has(e.path) ? { badge: "conflict" } : {}) }); if (e.children) walk(e.children, depth + 1); } };
+    const walk = (es: Entry[], depth: number) => { for (const e of es) { out.push({ path: e.path, name: e.name, depth, kind: e.kind === "dir" ? "folder" : "file", ...(conflict.has(e.path) ? { badge: "conflict" } : {}) }); if (e.children) walk(e.children, depth + 1); } };
     walk(tree, 0);
-    return [out, sizes] as const;
+    return out;
   }, [tree, hub?.conflicts]);
 
   const runCell = (c: Cell) => { if (current) api.run(current, c.hash).then((r) => setRuns((m) => ({ ...m, [c.hash]: r })), fail); };
@@ -338,7 +377,7 @@ export function App() {
     run: async (cell) => {
       const v = liveView.current;
       if (!current || !cell.hash) return;
-      if (v && draft !== null) await save(current, v.state.doc.toString());
+      if (v && draft.current) await flush.current();
       runCell(cell);
     },
   };
@@ -449,11 +488,11 @@ export function App() {
   };
   /** What is typed and not yet saved asks first (Save, Don't save, Cancel), then `then` runs. */
   const guard = (closing: string | undefined, then: () => void) => {
-    if (draft !== null && current) setUnsaved({ closing, then }); else then();
+    if (draft.current && current) setUnsaved({ closing, then }); else then();
   };
   const switchHub = (id: string) => guard("the hub", () => api.enter({ id }).then(enter, fail));
   const closeHub = () => guard("the hub", () => api.enter({}).then(enter, fail));
-  const closeFile = () => current && guard(undefined, () => { setDraft(null); closeTabs([current]); });
+  const closeFile = () => current && guard(undefined, () => { dropDraft(); closeTabs([current]); });
   const newHub = () => setAsk({ title: "New hub", label: "Name", ok: "Create", note: "It goes in ~/Documents/paperboat, and Malachite works in it.",
     run: (n) => guard("the hub", () => api.hubNew(n).then(enter, fail)) });
   // the system's dialogs in a Paperboat window; in a browser, the path typed
@@ -470,10 +509,10 @@ export function App() {
   const saveAs = (to: string) => {
     if (!current) return;
     if (to === current) { setDlg(""); flush.current(); return; }
-    let text = draft ?? note?.text ?? plain ?? "";
+    let text = draft.current?.text ?? note?.text ?? plain ?? "";
     if (typeOf(current) === "md") { const { props, body } = split(text); for (const k of ["id", "sealed", "sealed_by", "hash"]) delete props[k]; text = join(props, body); }
     setDlg("");
-    api.save(to, text).then(() => { setDraft(null); reload(); open(to); }, fail);
+    api.save(to, text).then(() => { dropDraft(); reload(); open(to); }, fail);
   };
 
   // ── the commands: the menu bar, the command search (Ctrl K) and the shortcuts read this one list ──
@@ -518,7 +557,8 @@ export function App() {
     { id: "help.about", label: "About Malachite", menu: "help", group: "about", run: () => openAbout() },
   ];
   useShortcuts(commands);
-  const searchItems: SearchItem[] = [
+  // what Search offers: built when it opens (every note and file: not on every redraw)
+  const searchItems = (): SearchItem[] => [
     ...items.filter((i) => i.type === "md").map((i): SearchItem => ({ id: `n:${i.path}`, label: i.title, detail: i.path, group: "Notes", scope: "Notes", icon: "markdown", run: () => open(i.path) })),
     ...items.filter((i) => i.type !== "md").map((i): SearchItem => ({ id: `f:${i.path}`, label: nameOf(i.path), detail: dirOf(i.path), group: "Files", scope: "Files", icon: "file", run: () => open(i.path) })),
     ...[...new Set(items.flatMap((i) => i.tags))].sort().map((t): SearchItem => ({ id: `t:${t}`, label: `#${t}`, detail: `${items.filter((i) => i.tags.includes(t)).length} notes`, group: "Tags", scope: "Notes", icon: "tag", run: () => setPage("views") })),
@@ -529,14 +569,25 @@ export function App() {
 
   /** Our picker's preview of a note: its title, when it changed, its size. */
   const describe = (e: FileEntry) => {
-    const it = items.find((i) => i.path === e.path), size = sizes.get(e.path);
+    const it = items.find((i) => i.path === e.path), size = it?.size;
     return it && <>
       {it.title !== nameOf(e.path) && <small>{it.title}</small>}
       <small>changed {new Date(it.mtime).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}{size === undefined ? "" : ` · ${size < 1e3 ? `${size} B` : size < 1e6 ? `${(size / 1e3).toFixed(1)} kB` : `${(size / 1e6).toFixed(1)} MB`}`}</small>
     </>;
   };
 
+  // the hub's tree (thousands of rows) redraws when its rows or the open file change, not with the rest of the
+  // page; its keys reach the actions as they are now
+  const act = useRef(actions);
+  act.current = actions;
+  const fileTree = useMemo(() => <FileTree entries={entries} active={revealed ?? current ?? undefined} ariaLabel="Hub" menu={(e) => fileMenu(e, act.current)}
+    actions={{
+      onOpen: (e) => act.current.open(e.path), onRename: (e) => act.current.rename(e.path), onDelete: (e) => act.current.trash(e.path),
+      onCopyPath: (e) => act.current.copy(e.path, "Path"),
+      onMove: (src, target) => { const to = target ? `${target.path}/${src.name}` : src.name; if (to !== src.path) api.move(src.path, to).then(reload, fail); },
+    }} />, [entries, revealed, current, reload, fail]);
   const t = current ? typeOf(current) : "";
+  const liveProps = useMemo(() => (note ? split(front?.path === note.path ? front.text : note.text).props : {}), [note, front]);
   const nRunning = Object.values(running).filter(Boolean).length;
   const mdCount = items.filter((i) => i.type === "md").length;
 
@@ -578,24 +629,19 @@ export function App() {
               {trashOpen ? <TrashList version={trashVersion} fail={fail}
                 confirm={(title, note, ok, run) => setAsk({ title, note, danger: true, ok, run })}
                 onRestored={(p, was) => { reload(); if (p !== was) show({ title: "Restored under a new name", detail: `${was} as ${p}: its name was taken`, state: "done" }); }} />
-              : <FileTree entries={entries} active={revealed ?? current ?? undefined} ariaLabel="Hub" menu={(e) => fileMenu(e, actions)}
-                actions={{
-                  onOpen: (e) => open(e.path), onRename: (e) => actions.rename(e.path), onDelete: (e) => actions.trash(e.path),
-                  onCopyPath: (e) => actions.copy(e.path, "Path"),
-                  onMove: (src, target) => { const to = target ? `${target.path}/${src.name}` : src.name; if (to !== src.path) api.move(src.path, to).then(reload, fail); },
-                }} />}
+              : fileTree}
             </Panel>
 
             <div className="bay">
             <section className="panel note" aria-label="Note" style={{ "--note-scale": noteSize.size } as React.CSSProperties}>
               <EditorTabs label="Open notes" current={current} onShow={(p) => open(p)} onClose={(p) => closeTabs([p])} menu={tabItems}
                 onUnpin={(p) => setPinned((s) => new Set([...s].filter((x) => x !== p)))}
-                tabs={strip.map((p) => ({ id: p, label: nameOf(p).replace(/\.md$/, ""), pinned: pinned.has(p), dirty: p === current && draft !== null }))} />
+                tabs={strip.map((p) => ({ id: p, label: nameOf(p).replace(/\.md$/, ""), pinned: pinned.has(p), dirty: p === current && dirty }))} />
               {current && (
                 <div className="crumb">
                   <span>{hub?.name} / {current.split("/").slice(0, -1).map((d) => `${d} / `).join("")}<b>{nameOf(current)}</b></span>
                   <span className="row-end">
-                    {(note || plain !== null) && <span>{unsaved ? "not saved" : draft !== null ? "saving…" : note?.sealed ? "sealed" : "saved"}</span>}
+                    {(note || plain !== null) && <span>{unsaved ? "not saved" : dirty ? "saving…" : note?.sealed ? "sealed" : "saved"}</span>}
                     {note && !note.sealed && <Key size="sm" icon="lock" onClick={() => actions.seal(note.path)} title="Seal: freeze the body and record its hash">Seal…</Key>}
                   </span>
                 </div>
@@ -604,13 +650,13 @@ export function App() {
                 {!current && <div className="empty"><AppMark app="malachite" size={72} idle label="" /><p>Open a note from the hub, or make one.</p><Key kind="primary" icon="new-file" onClick={() => newNote("")}>New note</Key></div>}
                 {note && mode === "read" && <ReadView note={note} runs={runs} resolve={resolve} look={look} onLink={onLink} onRun={runCell} onStop={stopCell} media={mediaFor} />}
                 {note && mode !== "read" && (() => {
-                  const editor = <Editor key={`${note.path}:${note.sealed}:${mode}:${restored}`} value={draft ?? note.text} language={markdown} settings={prose} appTheme={look.appTheme}
-                    readOnly={note.sealed} ariaLabel={`${note.title}, Markdown`} onChange={setDraft}
+                  const editor = <Editor key={`${note.path}:${note.sealed}:${mode}:${restored}`} value={draft.current?.path === note.path ? draft.current.text : note.text} language={markdown} settings={prose} appTheme={look.appTheme}
+                    readOnly={note.sealed} ariaLabel={`${note.title}, Markdown`} onChange={(text) => typed(note.path, text)}
                     extra={mode === "live" ? liveExt : dropExt} onView={(v) => { liveView.current = v; }} />;
                   return (
                     <div className={`edit ${mode}`} onContextMenu={(e) => { if ((e.target as HTMLElement).closest(".cm-editor")) { e.preventDefault(); setCtx({ x: e.clientX, y: e.clientY, at: liveView.current?.posAtCoords({ x: e.clientX, y: e.clientY }) ?? null }); } }}>
                       {mode === "live" ? <div className="livecol">
-                        <PropsEditor props={split(draft ?? note.text).props} sealed={note.sealed} onChange={setProps}
+                        <PropsEditor props={liveProps} sealed={note.sealed} onChange={setProps}
                           choices={(k) => valuesIn(items.filter((i) => i.type === "md"), k)}
                           ask={(title, value, ok, run) => setAsk({ title, label: "Value", value, ok, run: (v) => v.trim() && run(v.trim()) })} />
                         {editor}
@@ -622,7 +668,7 @@ export function App() {
                     </div>
                   );
                 })()}
-                {current && t !== "md" && <FileView path={current} text={plain} look={look} onChange={setDraft} media={mediaFor} apps={apps}
+                {current && t !== "md" && <FileView path={current} text={plain} look={look} onChange={(text) => typed(current, text)} media={mediaFor} apps={apps}
                   onApp={(app, copy) => { const label = apps.find((a) => a.name === app)?.label ?? app;
                     api.openIn(app, current, copy).then((r) => { window.open(r.url, label);  /* named: the Launcher opens it as that app's window */ show({ title: copy ? `Copied to ${label}` : `Opened in ${label}`, detail: copy ? `${r.folder}/${r.file} · not in the hub` : `${label} works in ${hub?.name ?? "the hub"}`, state: "done" }); }, fail); }} />}
               </div>
@@ -640,7 +686,7 @@ export function App() {
             <Panel name="Links" side="right" hidden={hideR} onHidden={setHideR} icon="references" width={300}>
               <LinksCard links={links} self={current ?? ""} onOpen={open} onCreate={(n) => onLink(n, true)}
                 onRestore={(v) => current && setAsk({ title: `Restore ${nameOf(current)} as it was ${v.time.slice(0, 16).replace("T", " ")}?`, note: "The current version stays in its versions; you can come back to it.", ok: "Restore",
-                  run: () => api.restoreVersion(v.id, current).then(() => api.note(current)).then((n) => { setNote(n); setDraft(null); setRestored((k) => k + 1); reload(); api.links(current).then(setLinks, () => {}); }, fail) })}
+                  run: () => api.restoreVersion(v.id, current).then(() => api.note(current)).then((n) => { setNote(n); setFront(null); dropDraft(); setRestored((k) => k + 1); reload(); api.links(current).then(setLinks, () => {}); }, fail) })}
                 graph={current && t === "md" ? <HubGraph focus={current} links={allLinks} items={items} local onOpen={open} /> : undefined} />
             </Panel>
           </div>
@@ -663,7 +709,7 @@ export function App() {
         </div>}
       </main>}
 
-      {search && <Search items={searchItems} scopes={["All", "Notes", "Files", "Commands"]} placeholder={`Search ${hub?.name ?? "the hub"} or run a command`} onClose={() => setSearch(false)} />}
+      {search && <Search items={searchItems()} scopes={["All", "Notes", "Files", "Commands"]} placeholder={`Search ${hub?.name ?? "the hub"} or run a command`} onClose={() => setSearch(false)} />}
       {settings && <Settings app="Malachite" key={settings} page={settings} onClose={() => setSettings(null)} pages={[
         { id: "general", label: "General", icon: "settings-gear", body: <><ThemeSetting theme={theme} onTheme={changeTheme} /><ScaleSetting scale={scale} onScale={changeScale} /></> },
         { id: "malachite", label: "Malachite", icon: "mark-malachite", body: <>
@@ -701,8 +747,8 @@ export function App() {
       {(dlg === "folder" || dlg === "file") && <TypedPath title={dlg === "folder" ? "Open folder" : "Open a local file"} what={dlg} onOpen={(p) => openPath(p)} onClose={() => setDlg("")} />}
       {notHub && <NotAHub name={notHub.name} onMake={() => { openPath(notHub.path, true); setNotHub(null); }} onOpenHub={() => { setNotHub(null); setDlg("connect"); }} onClose={() => setNotHub(null)} />}
       {unsaved && current && <Unsaved name={nameOf(current)} closing={unsaved.closing}
-        onSave={() => { const then = unsaved.then; setUnsaved(null); flush.current().then(() => { setDraft(null); then(); }); }}
-        onDiscard={() => { const then = unsaved.then; setUnsaved(null); setDraft(null); then(); }} onClose={() => setUnsaved(null)} />}
+        onSave={() => { const then = unsaved.then; setUnsaved(null); flush.current().then(() => { dropDraft(); then(); }); }}
+        onDiscard={() => { const then = unsaved.then; setUnsaved(null); dropDraft(); then(); }} onClose={() => setUnsaved(null)} />}
       {ask && <AskDialog ask={ask} onClose={() => setAsk(null)} />}
       {about && <About app="malachite" role="The hub of your work: notes, cells and every app's files" version={__VERSION__}
         paperboat={about.paperboat} repo="paperboatlab/malachite" credits={CREDITS} onClose={() => setAbout(null)}

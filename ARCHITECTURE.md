@@ -51,8 +51,11 @@ flowchart LR
   the files as they are).
 - `server/cli.ts`: `paperboat hub …` (through `commands.toml`, `bin/malachite hub …`): list, show, new,
   add, rename, config, move, history, restore, remove. `move` refuses a hub a Malachite serves (`.malachite/serving.pid`).
-- `server/index.ts`: `Index`: built from the files at start, updated by `fs.watch`; link resolution
-  (path, name, the nearest of several), backlinks with their line.
+- `server/index.ts`: `Index`: built from the files at start, then kept by `apply(changed)` from `fs.watch`:
+  only the paths a change batch names (a file read again, a folder that appeared walked, one that went
+  taking what was under it), never the whole hub (a synced folder's every stat is the network); link
+  resolution (path, name, the nearest of several) through a map of names, so a `[[name]]` never scans every
+  item; backlinks with their line.
 - `server/control.ts`: `Control`: one connection to `paperboatd` (started on demand, as the CLI does);
   leases belong to it, so closing it releases them.
 - `server/runtime.ts`: `Runtime`: the framed client of a runtime's socket; requests in order, `stream`
@@ -66,7 +69,9 @@ flowchart LR
 - `server/main.ts`: the HTTP server. The workspace is switched at runtime (`POST /api/workspace`: a known
   hub by id, a folder or a file by path, which opens the hub it lies in, `make` turning a plain folder into a
   hub, or nothing: the Start page); a plain folder answers 409 with `notHub`, as Malachite works in hubs
-  only. Opening a hub builds its `Hub`, `History`, `Index`, `Sessions` and watcher; the one before closes
+  only. Opening a hub builds its `Hub`, `History`, `Index`, `Sessions` and watcher (its `files` event says
+  what changed, with the items: `changed`, `items`, `gone`, and `tree` when a file came or went, so the page
+  patches its index and asks for the tree only then); the one before closes
   after (its sessions end, its history is saved, `serving.pid` goes), so a hub that can't open leaves the
   old one open. Every hub route answers 409 while none is open. Another app's file opens there (`paperboat app open <app> <hub> --no-open`,
   then `?open=<path>`: the app works in the hub) or is copied out to `~/Documents/paperboat/<app>/` (no tie
@@ -79,7 +84,7 @@ flowchart LR
   Shortcuts; Help › Keyboard shortcuts opens it on Shortcuts); the
   Start page with no hub; Open a hub (`ConnectHub`), our picker over the hub for Open file… and Save as…,
   `NotAHub`, `Unsaved` (the autosave waits while it asks), `TypedPath` in a browser and
-  `window.paperboatShell`'s dialogs in a Paperboat window; tabs kept per hub; a note as Read, Live (the kit
+  `window.paperboatShell`'s dialogs in a Paperboat window; tabs kept per hub; what is typed held outside the page's state (a key redraws the editor, not the page) and saved 700 ms after the last key; the index patched from the `files` events; a note as Read, Live (the kit
   editor with its `livePreview`, a cell's Run key saving then running it) or Edit; files that aren't notes, a CSV
   plotted), `Note.tsx` (properties, the Read view, cells and outputs), `fileMenu.ts` (the brand file menu
   for the kit's tree), `Graph.tsx` (the hub graph and the local graph, the kit's note graph), `Trash.tsx` (the hub card's trash), `Media.tsx` (pictures, videos, sounds: the kit's player and image

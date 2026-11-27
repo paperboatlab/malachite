@@ -66,20 +66,14 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
 
     // the index follows the files: whoever changed them (this server, an editor, git)
     let pending = new Set<string>(), timer: NodeJS.Timeout | undefined;
-    const watcher = fs.watch(hub.root, { recursive: true }, (_ev, f) => {
-      if (!f) return;
-      const rel = f.toString().split(path.sep).join("/");
-      if (rel.split("/").some((p) => p.startsWith(".") || p === "node_modules") || rel.endsWith(".tmp")) return;
+    const watcher = hub.watch((rel) => {
       pending.add(rel);
       clearTimeout(timer);
       timer = setTimeout(() => {
         const changed = [...pending];
         pending = new Set();
-        for (const r of changed) { try { index.update(r); } catch { /* outside or gone */ } }
-        // a folder that moved takes its files with it
-        for (const p of index.items.keys()) if (!fs.existsSync(path.join(hub.root, p))) index.items.delete(p);
-        for (const f of hub.files()) if (!index.items.has(f)) index.update(f);
-        emit({ type: "files", changed });
+        // what changed, with its items: the page patches its tree and index instead of asking for them again
+        emit({ type: "files", changed, ...index.apply(changed) });
         saveSoon();
       }, 120);
     });
@@ -198,7 +192,7 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
         case "POST /api/versions/restore": {
           holdSave();
           const id = history.restore(String(body.id), String(body.path ?? ""));
-          for (const f of hub.files()) index.update(f);
+          for (const f of hub.files()) index.update(f.path);
           return send(res, 200, { id });
         }
         // a file another app draws: open it there on this hub (the app works in the hub), or copy it out
@@ -227,13 +221,13 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
           const intact = n.props.hash ? `sha256:${bodyHash(n.body)}` === n.props.hash : undefined;
           return send(res, 200, { path: p, text, props: n.props, body: n.body, title: n.title, cells: n.cells, sealed: !!n.props.sealed, intact, outputs: sessions.outputs(id) });
         }
-        case "PUT /api/note": { hub.write(q("path"), String(body.text ?? "")); index.update(q("path")); return send(res, 200, {}); }
+        case "PUT /api/note": { hub.write(q("path"), String(body.text ?? "")); return send(res, 200, { mtime: index.update(q("path"))?.mtime }); }
         case "POST /api/note": { const p = hub.create(String(body.dir ?? ""), String(body.title ?? "Untitled"), String(body.kind ?? "note")); index.update(p); return send(res, 200, { path: p }); }
         case "POST /api/folder": { hub.mkdir(String(body.path)); return send(res, 200, {}); }
         case "POST /api/move": { hub.rename(String(body.from), String(body.to)); return send(res, 200, {}); }
         case "POST /api/trash": { hub.trash(String(body.path)); index.update(String(body.path)); return send(res, 200, {}); }
         case "GET /api/trash": return send(res, 200, hub.trashed());
-        case "POST /api/trash/restore": { const p = hub.restore(String(body.id)); index.update(p); for (const f of hub.files()) if (!index.items.has(f)) index.update(f); return send(res, 200, { path: p }); }
+        case "POST /api/trash/restore": { const p = hub.restore(String(body.id)); index.apply([p]); return send(res, 200, { path: p }); }
         case "POST /api/trash/delete": { hub.purge(String(body.id)); return send(res, 200, {}); }
         case "POST /api/trash/empty": { hub.purge(); return send(res, 200, {}); }
         case "POST /api/prop": { hub.setProp(String(body.path), String(body.key), String(body.value ?? "")); index.update(String(body.path)); return send(res, 200, {}); }

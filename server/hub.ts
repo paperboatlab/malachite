@@ -15,6 +15,8 @@ export class HubError extends Error { readonly status: number; constructor(messa
 const HIDDEN = new Set([".malachite", ".git", "node_modules", ".DS_Store"]);
 export const SCHEMA = 3;   // 1: hub.toml at the root; 2: .malachite/hub.toml, with an id (paperboat#16); 3: the log in .malachite/log/
 const MONTH = /^\d{4}-\d{2}\.jsonl$/;
+// one collator for the tree's order: `localeCompare` with options builds one per call (seconds on a big hub)
+const byName = new Intl.Collator(undefined, { numeric: true }).compare;
 
 /** This machine's name in the files only it writes (its log, its history bundle): its host name, made safe. */
 export const machine = () => (process.env.MALACHITE_MACHINE ?? os.hostname()).replace(/[^\w.-]+/g, "-") || "machine";
@@ -115,28 +117,63 @@ export class Hub {
     if (abs !== this.root && !abs.startsWith(this.root + path.sep)) throw new HubError("outside the hub");
     // a symlink may point out: check where it really lands (the last part may not exist yet)
     let real = abs;
-    try { real = fs.realpathSync(abs); } catch { try { real = path.join(fs.realpathSync(path.dirname(abs)), path.basename(abs)); } catch { /* a new folder chain */ } }
+    try { real = fs.realpathSync.native(abs); } catch { try { real = path.join(fs.realpathSync.native(path.dirname(abs)), path.basename(abs)); } catch { /* a new folder chain */ } }
     if (real !== this.root && !real.startsWith(this.root + path.sep)) throw new HubError("outside the hub");
     return abs;
   }
   rel = (abs: string) => path.relative(this.root, abs).split(path.sep).join("/");
 
-  tree(dir = this.root): Entry[] {
+  tree(dir = this.root, rel = this.rel(dir)): Entry[] {
     const out: Entry[] = [];
     for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
       if (HIDDEN.has(d.name) || d.name.startsWith(".") || d.name.endsWith(".tmp")) continue;   // a write in progress
-      const abs = path.join(dir, d.name);
-      if (d.isDirectory()) out.push({ path: this.rel(abs), name: d.name, kind: "dir", children: this.tree(abs) });
-      else if (d.isFile()) { const st = fs.statSync(abs); out.push({ path: this.rel(abs), name: d.name, kind: "file", size: st.size, mtime: st.mtimeMs }); }
+      const abs = path.join(dir, d.name), p = rel ? `${rel}/${d.name}` : d.name;
+      if (d.isDirectory()) out.push({ path: p, name: d.name, kind: "dir", children: this.tree(abs, p) });
+      else if (d.isFile()) { const st = fs.statSync(abs); out.push({ path: p, name: d.name, kind: "file", size: st.size, mtime: st.mtimeMs }); }
     }
-    return out.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name, undefined, { numeric: true }) : a.kind === "dir" ? -1 : 1));
+    return out.sort((a, b) => (a.kind === b.kind ? byName(a.name, b.name) : a.kind === "dir" ? -1 : 1));
   }
 
-  /** Every file, relative (the index walks this). */
-  files(): string[] {
-    const out: string[] = [];
-    const walk = (es: Entry[]) => { for (const e of es) e.kind === "dir" ? walk(e.children!) : out.push(e.path); };
-    walk(this.tree());
+  /** Calls `on` with the hub-relative path of what changes (a file or a folder; whoever changed it), but what
+   *  the tree hides (dot folders, node_modules, a write in progress). On Linux one watch per folder: Node's own
+   *  recursive watch there also watches every file, stats it on each change, and loses a file once a rename
+   *  replaces it (every save here is one), so a note saved once never showed a change from outside again. */
+  watch(on: (rel: string) => void): { close: () => void } {
+    const hidden = (rel: string) => rel.split("/").some((p) => p.startsWith(".") || HIDDEN.has(p)) || rel.endsWith(".tmp");
+    const tell = (rel: string) => { if (!hidden(rel)) on(rel); };
+    if (process.platform !== "linux") {
+      const w = fs.watch(this.root, { recursive: true }, (_e, f) => f && tell(f.toString().split(path.sep).join("/")));
+      return { close: () => w.close() };
+    }
+    const dirs = new Map<string, fs.FSWatcher>();
+    const drop = (rel: string) => { for (const [k, w] of dirs) if (k === rel || k.startsWith(`${rel}/`)) { w.close(); dirs.delete(k); } };
+    const add = (rel: string) => {
+      if (dirs.has(rel) || (rel && hidden(rel))) return;
+      const abs = path.join(this.root, rel);
+      let w: fs.FSWatcher, ds: fs.Dirent[];
+      try {
+        w = fs.watch(abs, (ev, f) => {
+          if (!f) return;
+          const r = rel ? `${rel}/${f}` : f.toString();
+          tell(r);
+          if (ev !== "rename") return;   // a folder that came (watched, with its folders) or went
+          try { if (fs.statSync(path.join(this.root, r)).isDirectory()) add(r); } catch { drop(r); }
+        });
+        ds = fs.readdirSync(abs, { withFileTypes: true });
+      } catch { return; }   // gone already
+      w.on("error", () => drop(rel));
+      dirs.set(rel, w);
+      for (const d of ds) if (d.isDirectory()) add(rel ? `${rel}/${d.name}` : d.name);
+    };
+    add("");
+    return { close: () => { for (const w of dirs.values()) w.close(); dirs.clear(); } };
+  }
+
+  /** Every file, relative (the index walks this): the hub's, or one folder's. */
+  files(under = ""): Entry[] {
+    const out: Entry[] = [];
+    const walk = (es: Entry[]) => { for (const e of es) e.kind === "dir" ? walk(e.children!) : out.push(e); };
+    walk(this.tree(under ? this.resolve(under) : this.root));
     return out;
   }
 

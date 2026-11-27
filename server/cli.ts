@@ -18,7 +18,7 @@ function table(head: string[], rows: string[][]) {
 
 /** What a hub holds, for `hub show` and the Launcher's Overview. */
 function holds(root: string) {
-  const hub = new Hub(root), files = hub.files();
+  const hub = new Hub(root), files = hub.files().map((f) => f.path);
   const n = (re: RegExp) => files.filter((f) => re.test(f)).length;
   const bytes = files.reduce((s, f) => s + fs.statSync(path.join(root, f)).size, 0);
   return { notes: n(/\.md$/), runs: new Set(files.filter((f) => f.startsWith("runs/")).map((f) => f.split("/")[1])).size, models: n(/\.(mo|psf|pst)$/), files: files.length, bytes };

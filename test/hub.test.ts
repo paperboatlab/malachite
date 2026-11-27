@@ -88,6 +88,88 @@ test("the index resolves links and finds backlinks with their context", () => {
   assert.equal(ix.items.get("tank/level-loop.pst")?.type, "pst");
 });
 
+test("the index follows what changed, and only that: files, a moved folder, a removed one", () => {
+  const v = new Hub(tmp());
+  const w = (p: string, t: string) => { fs.mkdirSync(path.dirname(path.join(v.root, p)), { recursive: true }); fs.writeFileSync(path.join(v.root, p), t); };
+  w("a/one.md", "# One\n"); w("a/deep/two.md", "# Two\nSee [[one]].\n"); w("b.md", "# B\n");
+  const ix = new Index(v);
+  ix.build();
+  // an edit: that file read again, the tree unchanged
+  w("b.md", "# Bee\nNow links [[two]].\n");
+  let r = ix.apply(["b.md"]);
+  assert.deepEqual(r.items.map((i) => [i.path, i.title]), [["b.md", "Bee"]]);
+  assert.deepEqual([r.gone, r.tree], [[], false]);
+  assert.deepEqual(ix.backlinks("a/deep/two.md"), ["b.md"]);
+  // a folder moved (another app, git): the old name takes its files out, the new one is walked
+  fs.renameSync(path.join(v.root, "a"), path.join(v.root, "c"));
+  r = ix.apply(["a", "c"]);
+  assert.deepEqual(r.items.map((i) => i.path).sort(), ["c/deep/two.md", "c/one.md"]);
+  assert.deepEqual(r.gone.sort(), ["a/deep/two.md", "a/one.md"]);
+  assert.equal(r.tree, true);
+  assert.deepEqual([...ix.items.keys()].sort(), ["b.md", "c/deep/two.md", "c/one.md"]);
+  assert.equal(ix.resolve("one"), "c/one.md");
+  assert.equal(ix.resolve("a/one"), null);
+  // a folder seen again: what didn't change isn't read again, what is gone from it leaves
+  fs.rmSync(path.join(v.root, "c", "one.md"));
+  w("c/three.md", "# Three\n");
+  r = ix.apply(["c"]);
+  assert.deepEqual([r.items.map((i) => i.path), r.gone], [["c/three.md"], ["c/one.md"]]);
+  // a folder removed; a path outside the hub or never there changes nothing
+  fs.rmSync(path.join(v.root, "c"), { recursive: true });
+  r = ix.apply(["c", "../x.md", "nope.md"]);
+  assert.deepEqual([r.items, r.gone.sort()], [[], ["c/deep/two.md", "c/three.md"]]);
+  assert.deepEqual([...ix.items.keys()], ["b.md"]);
+  assert.equal(ix.resolve("two"), null);
+});
+
+test("the watcher tells the page what changed, with its items, and never what it didn't", { timeout: 20_000 }, async () => {
+  const { serve } = await import("../server/main.ts");
+  const { Control } = await import("../server/control.ts");
+  const dir = tmp();
+  fs.mkdirSync(path.join(dir, "notes", "old"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "notes", "old", "x.md"), "# X\n");
+  const { server } = serve(dir, 0, new Control(path.join(dir, "none.sock"), false));
+  await new Promise((r) => server.once("listening", r));
+  const base = `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`;
+  const events: any[] = [], ac = new AbortController();
+  const es = await fetch(`${base}/events`, { signal: ac.signal });
+  (async () => { let buf = ""; for await (const c of es.body!) { buf += new TextDecoder().decode(c); let i; while ((i = buf.indexOf("\n\n")) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 2); if (l.startsWith("data: ")) events.push(JSON.parse(l.slice(6))); } } })().catch(() => {});
+  const files = async (pred: (e: any) => boolean) => { for (let i = 0; i < 200; i++) { const e = events.find((x) => x.type === "files" && pred(x)); if (e) return e; await new Promise((r) => setTimeout(r, 25)); } throw new Error(`no such event: ${JSON.stringify(events)}`); };
+  try {
+    // the page's save: its mtime is the one the watcher event carries
+    const put = await fetch(`${base}/api/note?path=notes/a.md`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "# A\n[[x]]\n" }) }).then((r) => r.json());
+    let e = await files((x) => x.changed.includes("notes/a.md"));
+    assert.equal(e.items.find((i: any) => i.path === "notes/a.md").mtime, put.mtime);
+    assert.equal(e.tree, true);   // a new file
+    // another editor's change to a file the page saved over (a rename replaced it): seen, patched in, the tree as it was
+    await new Promise((r) => setTimeout(r, 200));
+    await fetch(`${base}/api/note?path=notes/a.md`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "# A saved again\n" }) });
+    await files((x) => x.items.some((i: any) => i.title === "A saved again"));
+    await new Promise((r) => setTimeout(r, 200));
+    events.length = 0;
+    fs.writeFileSync(path.join(dir, "notes", "a.md"), "# A again\n");
+    e = await files((x) => x.items.some((i: any) => i.title === "A again"));
+    assert.deepEqual([e.gone, e.tree], [[], false]);
+    // a new folder with a file in it, made from outside: watched, so a later change in it is seen
+    fs.mkdirSync(path.join(dir, "notes", "fresh"));
+    fs.writeFileSync(path.join(dir, "notes", "fresh", "y.md"), "# Y\n");
+    await files((x) => x.items.some((i: any) => i.path === "notes/fresh/y.md"));
+    await new Promise((r) => setTimeout(r, 200));
+    events.length = 0;
+    fs.writeFileSync(path.join(dir, "notes", "fresh", "y.md"), "# Y again\n");
+    await files((x) => x.items.some((i: any) => i.title === "Y again"));
+    fs.rmSync(path.join(dir, "notes", "fresh"), { recursive: true });
+    await files((x) => x.gone.includes("notes/fresh/y.md"));
+    // a folder moved from outside: its files leave under the old name and come back under the new one
+    events.length = 0;
+    fs.renameSync(path.join(dir, "notes", "old"), path.join(dir, "notes", "new"));
+    e = await files((x) => x.items.some((i: any) => i.path === "notes/new/x.md"));
+    assert.ok(e.gone.includes("notes/old/x.md") || events.some((x) => x.type === "files" && x.gone.includes("notes/old/x.md")));
+    const index = await fetch(`${base}/api/index`).then((r) => r.json());
+    assert.deepEqual(index.map((i: any) => i.path), ["notes/a.md", "notes/new/x.md"]);
+  } finally { ac.abort(); server.close(); }
+});
+
 test("the server answers a missing file with 404 and stays up", async () => {
   const { serve } = await import("../server/main.ts");
   const { Control } = await import("../server/control.ts");
