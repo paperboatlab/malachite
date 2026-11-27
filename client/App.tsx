@@ -681,7 +681,7 @@ export function App() {
         onSave={() => { const then = unsaved.then; setUnsaved(null); flush.current().then(() => { setDraft(null); then(); }); }}
         onDiscard={() => { const then = unsaved.then; setUnsaved(null); setDraft(null); then(); }} onClose={() => setUnsaved(null)} />}
       {ask && <AskDialog ask={ask} onClose={() => setAsk(null)} />}
-      {about && <About app="malachite" role="An engineering notebook: Markdown notes with Julia and Python cells" version={__VERSION__}
+      {about && <About app="malachite" role="The hub of your work: notes, cells and every app's files" version={__VERSION__}
         paperboat={about.paperboat} repo="paperboatlab/malachite" credits={CREDITS} onClose={() => setAbout(null)}
         info={[about.format && `hub format ${about.format}`, __COMMIT__ && `commit ${__COMMIT__}`].filter(Boolean).join(" · ") || undefined} />}
       <Toasts toasts={toasts} onDismiss={dismiss} />

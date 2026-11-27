@@ -1,8 +1,10 @@
 Malachite
 =========
 
-Malachite is an engineering notebook: notes, runs and results in one hub, with Julia and Python cells
-run by Paperboat's runtimes. A hub is a folder of Markdown notes and the files around them.
+Malachite is the hub of your work: notes, models, flows, scripts and results in one folder that every
+Paperboat app opens, with Julia and Python cells run by Paperboat's runtimes. A hub is a folder of
+Markdown notes and the files around them: Articula's models, Simplicial's stations and flows, Julix's
+scripts.
 
 .. toctree::
    :maxdepth: 1

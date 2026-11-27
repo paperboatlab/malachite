@@ -5,8 +5,9 @@
   </picture>
 </h1>
 
-An engineering notebook: notes, runs and results in one hub, with Julia and Python cells run by
-Paperboat's runtimes. Part of [Paperboat](https://github.com/paperboatlab/paperboat).
+The hub of your work: notes, models, flows, scripts and results in one folder that every Paperboat app
+opens, with Julia and Python cells run by Paperboat's runtimes. Part of
+[Paperboat](https://github.com/paperboatlab/paperboat).
 
 A **hub** is a folder of Markdown notes and the files around them. Notes link with `[[name]]`, carry
 their properties in a front matter, and hold cells (fenced `julia` or `python` blocks) that run in the
