@@ -187,6 +187,12 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
         case "GET /api/about": return send(res, 200, { format: SCHEMA, paperboat: await paperboatVersion() });
         case "POST /api/launcher": { await paperboat(["launcher", "--page", "runtimes"]); return send(res, 200, {}); }   // Manage runtimes… (paperboat#69)
         case "GET /api/apps": return send(res, 200, await installedApps().catch(() => []));
+        // Ctrl+K's Open example: <name> (paperboat#72): none without the CLI; opening makes a copy and a window
+        case "GET /api/examples": return send(res, 200, await paperboat(["example", "list", "--app", "malachite"]).catch(() => []));
+        case "POST /api/examples/open": {
+          if (typeof body.id !== "string" || !body.id) throw new HubError("which example: { id }");
+          return send(res, 200, await paperboat(["example", "open", body.id]));
+        }
       }
       const { hub, history, index, sessions, saveSoon, holdSave } = need();
       const hubInfo = () => ({ ...hub.conf, root: hub.root, shown: tilde(hub.root), place: placeOf(hub.root), conflicts: conflictsIn(hub.root) });

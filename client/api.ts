@@ -1,5 +1,5 @@
 // The app server's API (server/main.ts), typed for the page.
-import type { Scale, Theme } from "@paperboatlab/ui";
+import type { Example, Scale, Theme } from "@paperboatlab/ui";
 import type { RecentEntry } from "@paperboatlab/ui/workspace";
 export type Entry = { path: string; name: string; kind: "dir" | "file"; size?: number; mtime?: number; children?: Entry[] };
 export type Props = Record<string, string | string[]>;
@@ -80,6 +80,10 @@ export const api = {
   restart: (lang: Lang) => call("POST", "/api/restart", { lang }),
   /** Manage runtimes…: the Paperboat Launcher on its Runtimes page. */
   manageRuntimes: () => call("POST", "/api/launcher", {}),
+  /** The examples Paperboat has for Malachite (paperboat example list); [] without the CLI. */
+  examples: () => call<Example[]>("GET", "/api/examples"),
+  /** Open example: its copy in $PAPERBOAT_HOME/examples, in a new Paperboat window. */
+  openExample: (id: string) => call("POST", "/api/examples/open", { id }),
   runtimes: () => call<Peek>("GET", "/api/runtimes"),
   ask: (lang: Lang, op: string, args: Record<string, unknown>) => call<unknown>("POST", "/api/ask", { lang, op, args }),
   /** A file's bytes; `v` (its mtime) makes a changed file load again. */

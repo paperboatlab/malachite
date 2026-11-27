@@ -5,8 +5,8 @@
 // (@paperboatlab/ui): the menus and the command registry, the workspace parts, the file tree, the editor and
 // its languages, the plot, the canvas layout; Malachite brings the hub, its notes and cells. Files are the record.
 import {
-  About, AppMark, Dialog, Key, Menu, MenuBar, Notifications, Panel, PanelsKey, Rail, ScaleSetting, Search, Segmented, SettingRow, Settings, SettingsSection, ShortcutList, THEMES, ThemeSetting, Toasts, WindowKeys, isEnabled, isScale, readStored, useScale, useShortcuts, useTheme, useToasts, writeStored,
-  type Command, type CommandMenu, type Credit, type MenuEntry, type Scale, type SearchItem, type Theme,
+  About, AppMark, Dialog, Key, Menu, MenuBar, Notifications, Panel, PanelsKey, Rail, ScaleSetting, Search, Segmented, SettingRow, Settings, SettingsSection, ShortcutList, THEMES, ThemeSetting, Toasts, WindowKeys, exampleCommands, isEnabled, isScale, readStored, useScale, useShortcuts, useTheme, useToasts, writeStored,
+  type Command, type CommandMenu, type Credit, type Example, type MenuEntry, type Scale, type SearchItem, type Theme,
 } from "@paperboatlab/ui";
 import { Editor, EditorSettingsPane, EditorTabs, afterClose, languageFor, livePreview, markdown, orderTabs, tabMenu, useEditorSettings, type Session } from "@paperboatlab/ui/editor";
 import { EditorView } from "@codemirror/view";
@@ -122,6 +122,7 @@ export function App() {
   const [peekVersion, setPeekVersion] = useState(0);
   const [log, setLog] = useState<LogEvent[]>([]);
   const [search, setSearch] = useState(false);
+  const [examples, setExamples] = useState<Example[]>([]);
   const [ask, setAsk] = useState<Ask | null>(null);
   const [about, setAbout] = useState<{ format?: number; paperboat?: string | null } | null>(null);
   const notes = useToasts();
@@ -160,6 +161,7 @@ export function App() {
   useEffect(() => {
     loadWs();
     api.apps().then(setApps, () => setApps([]));
+    api.examples().then(setExamples, () => {});
   }, [loadWs]);
   // a file to open once its hub is open: a deep link (/?open=<path in the hub>&mode=edit), a file opened from outside
   const pending = useRef<{ path: string; mode: Mode } | null>((() => {
@@ -537,7 +539,7 @@ export function App() {
     { id: "edit.link", label: "Copy link", menu: "edit", group: "file", ...(current ? {} : { enabled: false, why: "no file open" }), run: () => current && actions.copy(`[[${nameOf(current).replace(/\.md$/, "")}]]`, "Link") },
     { id: "edit.path", label: "Copy path", menu: "edit", group: "file", ...(current ? {} : { enabled: false, why: "no file open" }), run: () => current && actions.copy(current, "Path") },
     { id: "edit.trash", label: "Move to trash", menu: "edit", group: "file", ...(current ? {} : { enabled: false, why: "no file open" }), run: () => current && actions.trash(current) },
-    { id: "edit.search", label: `Search ${hub?.name ?? "the hub"}…`, menu: "edit", group: "find", shortcut: "Ctrl K", chord: { key: "k", ctrl: true }, quiet: true, ...noHub, run: () => setSearch((o) => !o) },
+    { id: "edit.search", label: ws ? `Search ${hub?.name ?? "the hub"}…` : "Run a command…", menu: "edit", group: "find", shortcut: "Ctrl K", chord: { key: "k", ctrl: true }, quiet: true, run: () => setSearch((o) => !o) },
     ...(["notes", "views", "graph", "log"] as Page[]).map((p, i): Command => ({ id: `view.${p}`, label: `${p[0].toUpperCase()}${p.slice(1)}`, menu: "view", group: "pages", shortcut: `Alt ${i + 1}`, checked: !!ws && page === p, ...noHub, run: () => setPage(p) })),
     { id: "view.files", label: "Files", menu: "view", group: "panels", shortcut: "Ctrl B", chord: { key: "b", ctrl: true }, checked: !!ws && !hideL, ...noHub, run: () => setHideL((h) => !h) },
     { id: "view.links", label: "Links", menu: "view", group: "panels", shortcut: "Ctrl Alt B", chord: { key: "b", ctrl: true, alt: true }, checked: !!ws && !hideR, ...noHub, run: () => setHideR((h) => !h) },
@@ -561,6 +563,7 @@ export function App() {
     { id: "help.issue", label: "Report an issue…", menu: "help", group: "docs", icon: "link-external", run: () => { window.open("https://github.com/paperboatlab/malachite/issues/new", "_blank", "noopener"); } },
     { id: "help.keys", label: "Keyboard shortcuts", menu: "help", group: "keys", icon: "keys", shortcut: "Ctrl /", chord: { key: "/", ctrl: true }, run: () => setSettings("shortcuts") },
     { id: "help.about", label: "About Malachite", menu: "help", group: "about", run: () => openAbout() },
+    ...exampleCommands(examples, (id) => { api.openExample(id).catch(fail); }),   // Ctrl K only: "examples" is no menu of the bar
   ];
   useShortcuts(commands);
   // what Search offers: built when it opens (every note and file: not on every redraw)
@@ -715,7 +718,7 @@ export function App() {
         </div>}
       </main>}
 
-      {search && <Search items={searchItems()} scopes={["All", "Notes", "Files", "Commands"]} placeholder={`Search ${hub?.name ?? "the hub"} or run a command`} onClose={() => setSearch(false)} />}
+      {search && <Search items={searchItems()} scopes={["All", "Notes", "Files", "Commands"]} placeholder={ws ? `Search ${hub?.name ?? "the hub"} or run a command` : "Run a command or open an example"} onClose={() => setSearch(false)} />}
       {settings && <Settings app="Malachite" key={settings} page={settings} onClose={() => setSettings(null)} pages={[
         { id: "general", label: "General", icon: "settings-gear", body: <><ThemeSetting theme={theme} onTheme={changeTheme} /><ScaleSetting scale={scale} onScale={changeScale} /></> },
         { id: "malachite", label: "Malachite", icon: "mark-malachite", body: <>
