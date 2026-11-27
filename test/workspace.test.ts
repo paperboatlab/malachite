@@ -97,3 +97,21 @@ test("started on a plain folder: the Start page asks, the folder stays plain", a
     assert.ok(!fs.existsSync(path.join(plain, ".malachite")));
   } finally { server.close(); }
 });
+
+test("opening a hub says what it does, for the page's Start", async () => {
+  const hubDir = tmp("ws-open-");
+  for (const f of ["a.md", "b.md", "data/c.csv"]) { fs.mkdirSync(path.dirname(path.join(hubDir, f)), { recursive: true }); fs.writeFileSync(path.join(hubDir, f), "x\n"); }
+  const { server } = serve(null, 0, new Control(path.join(home, "none.sock"), false));
+  await new Promise((r) => server.once("listening", r));
+  const base = `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`;
+  const ac = new AbortController(), said: string[] = [];
+  try {
+    const es = await fetch(`${base}/events`, { signal: ac.signal });
+    const read = (async () => { for await (const c of es.body!) for (const m of new TextDecoder().decode(c).matchAll(/data: (.*)/g)) { const e = JSON.parse(m[1]); if (e.type === "opening") said.push(e.detail); } })().catch(() => {});
+    const r = await fetch(`${base}/api/workspace`, { method: "POST", headers: { "content-type": "application/json", origin: base }, body: JSON.stringify({ path: hubDir, make: true }) });
+    assert.equal(r.status, 200);
+    await new Promise((r) => setTimeout(r, 100));
+    assert.deepEqual(said, ["Reading the history", "Indexing 3 files"]);
+    void read;
+  } finally { ac.abort(); server.close(); }
+});

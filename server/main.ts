@@ -41,12 +41,16 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
 
   /** Opens a hub: its settings (made on a plain folder), the history, the index, the sessions, the watcher. */
   const work = (dir: string): Open => {
+    // what the open does, for the page's Start (its words show past 2 s; sent before each long step, which
+    // holds the event loop)
+    const doing = (detail: string) => emit({ type: "opening", detail });
     const hub = new Hub(dir);
     remember(hub.id, hub.root);   // $PAPERBOAT_HOME/hubs.toml: every app's list of hubs
     // while this serves the hub, `paperboat hub move` refuses to move it from under us
     const serving = path.join(hub.root, ".malachite", "serving.pid");
     fs.writeFileSync(serving, String(process.pid));
     // the history: other machines' pasts first, then what changed while no Malachite was watching
+    doing("Reading the history");
     const history = new History(hub);
     history.merge();
     history.save(history.versions(".", 1).length ? "Changes while Malachite was closed" : undefined);
@@ -60,7 +64,7 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
       }, 3000).unref();   // never what keeps the process up: closing saves and packs anyway
     };
     const index = new Index(hub);
-    index.build();
+    index.build((n) => doing(`Indexing ${n.toLocaleString("en").replace(/,/g, " ")} files`));
     hub.onEvent = (e) => emit({ type: "log", event: e });
     const sessions = new Sessions(hub, control, emit);
 
