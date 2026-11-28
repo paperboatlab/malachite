@@ -3,13 +3,15 @@
 // (pb#415 §9): it asks paperboatd for the lease and speaks the protocol. Outputs are kept beside the
 // note in `.malachite/out/<note id>/<cell hash>.json` (decision 16), with the runtime that made them; an
 // example's in its state folder outside it (Hub.state). A container mounts the project read-only (paperboatd's
-// default policy: no `writable_project`), so a cell can't write in the hub's folder; the native backend has no
-// sandbox and can. A Julia session starts once the hub's Manifest is installed in its deps volume (packages.ts).
+// default policy: no `writable_project`). An example's runtimes are asked for with `readonly` (pb#91), which
+// paperboatd keeps on every backend (`:ro`, Landlock natively on Linux, else it refuses the backend), so a cell
+// can't write into it however it names the path. A Julia session starts once the hub's Manifest is installed in
+// its deps volume (packages.ts).
 import fs from "node:fs";
 import path from "node:path";
 import { Control, type Lease } from "./control.ts";
 import { parse, type Cell, type Lang, type Note } from "./note.ts";
-import { depsVolume, instantiate, missing } from "./packages.ts";
+import { depsVolume, instantiate, missing, readonly } from "./packages.ts";
 import { Runtime, RuntimeError, type ErrorInfo } from "./runtime.ts";
 import type { Hub } from "./hub.ts";
 
@@ -96,7 +98,7 @@ export class Sessions {
   private async start(lang: Lang, entry: Entry): Promise<Session> {
     if (lang === "julia") await this.packages(entry);
     entry.abort.signal.throwIfAborted();
-    const lease = await this.control.call<Lease>("acquire", { runtime: lang, mode: "session", project: this.hub.root, owner: `malachite:${this.hub.name}` });
+    const lease = await this.control.call<Lease>("acquire", { runtime: lang, mode: "session", project: this.hub.root, ...readonly(this.hub), owner: `malachite:${this.hub.name}` });
     entry.lease = lease.id;
     try {
       if (lease.state === "failed") throw new Error(lease.error ?? `${lang} failed to start`);
@@ -120,7 +122,7 @@ export class Sessions {
       if (!need.length) return;
       const what = `Installing ${need.length === 1 ? need[0] : `${need.length} packages`} from the hub's Manifest.toml`;
       this.emit({ type: "session", lang: "julia", state: "starting", detail: what });
-      await instantiate(this.control, this.hub.root, `malachite:${this.hub.name}:packages`, entry.abort.signal,
+      await instantiate(this.control, this.hub, `malachite:${this.hub.name}:packages`, entry.abort.signal,
         (line) => this.emit({ type: "session", lang: "julia", state: "starting", detail: `${what}: ${line}` }));
     } catch (e) {
       entry.abort.signal.throwIfAborted();

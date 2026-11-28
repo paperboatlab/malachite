@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash, randomBytes } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { bodyHash, join, split } from "./note.ts";
 
 export type Entry = { path: string; name: string; kind: "dir" | "file"; size?: number; mtime?: number; children?: Entry[] };
@@ -63,19 +64,59 @@ export function paperboatHome(): string {
 }
 
 const real = (p: string) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
-/** An example of paperboat-examples where it is (paperboat#75: `paperboat example open` opens it in place), or
- *  null: `<examples>/<group>/<example>/` with its `example.toml`, `<examples>` being `$PAPERBOAT_EXAMPLES_DIR`, a
- *  checkout (its `golden.py`) or GitHub's copy (`<home>/cache/examples`), as the CLI's `examples_root` finds them.
- *  Its id is the CLI's: `<group>/<example>`. A copy of one (the banner's Copy) is a folder of the user's: none. */
-export function exampleAt(dir: string): { id: string } | null {
-  const d = real(dir), top = path.dirname(path.dirname(d));
+/** An example opened where it is (paperboat#75): its id (the CLI's, `<group>/<example>`) and its name. */
+export type Example = { id: string; name: string };
+
+/** The folder this server was started on as an example: `paperboat example open <id>` says so with
+ *  PAPERBOAT_EXAMPLE=<id> (pb#91), set on that server only (a plain folder, or a copy, has none). */
+let launchedAs: { id: string; root: string } | null = null;
+/** The server's start: the folder it was given (its cwd), an example when PAPERBOAT_EXAMPLE says so. */
+export function launched(dir: string | null, env: NodeJS.ProcessEnv = process.env) {
+  launchedAs = env.PAPERBOAT_EXAMPLE && dir ? { id: env.PAPERBOAT_EXAMPLE, root: real(dir) } : null;
+  return launchedAs;
+}
+
+type Listed = { id?: string; name?: string; path?: string; root?: string };
+let listed: { key: string; at: number; roots: string[] | null; entries: Listed[] } | undefined;
+/** The folders the examples are in as paperboat finds them (`example list --json`'s `root`, pb#91), with its
+ *  entries; `roots` null when it doesn't say (an older paperboat, or none on PATH). Asked at most every minute,
+ *  and again when what the CLI reads changes. */
+function listing() {
+  const env = process.env, key = [env.PAPERBOAT_BIN, env.PAPERBOAT_EXAMPLES_DIR, env.PAPERBOAT_HOME, env.XDG_DATA_HOME].join("\0");
+  if (!listed || listed.key !== key || Date.now() - listed.at > 60_000) {
+    let entries: Listed[] = [];
+    try {
+      const j = JSON.parse(execFileSync(env.PAPERBOAT_BIN ?? "paperboat", ["example", "list", "--json"], { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }));
+      if (Array.isArray(j)) entries = j.filter((e) => e && typeof e === "object");
+    } catch { /* no CLI, or it failed: the markers below */ }
+    const roots = [...new Set(entries.map((e) => e.root).filter((r): r is string => typeof r === "string" && !!r).map(real))];
+    listed = { key, at: Date.now(), roots: roots.length ? roots : null, entries };
+  }
+  return listed;
+}
+
+/** An example of paperboat-examples where it is, or null. The folder this server was started on as one
+ *  (PAPERBOAT_EXAMPLE), else `<root>/<group>/<example>/` with its `example.toml`, `<root>` being one paperboat
+ *  names (`example list --json`). An older paperboat names none: then `$PAPERBOAT_EXAMPLES_DIR` or GitHub's copy
+ *  (`<home>/cache/examples`). A copy of one (the banner's Copy) is a folder of the user's: none. */
+export function exampleAt(dir: string): Example | null {
+  const d = real(dir);
+  if (launchedAs?.root === d) return { id: launchedAs.id, name: nameIn(d) };
+  const top = path.dirname(path.dirname(d));
   if (!fs.existsSync(path.join(d, "example.toml")) || top === path.dirname(top)) return null;
-  const roots = [process.env.PAPERBOAT_EXAMPLES_DIR, path.join(paperboatHome(), "cache", "examples")].filter((r): r is string => !!r).map(real);
-  if (!roots.includes(top) && !fs.existsSync(path.join(top, "golden.py"))) return null;
-  return { id: `${path.basename(path.dirname(d))}/${path.basename(d)}` };
+  const { roots, entries } = listing();
+  const known = roots ?? [process.env.PAPERBOAT_EXAMPLES_DIR, path.join(paperboatHome(), "cache", "examples")].filter((r): r is string => !!r).map(real);
+  if (!known.includes(top)) return null;
+  const e = entries.find((x) => typeof x.path === "string" && real(x.path) === d);
+  return { id: e?.id ?? `${path.basename(path.dirname(d))}/${path.basename(d)}`, name: e?.name ?? nameIn(d) };
+}
+/** An example's name: its `example.toml`'s, else its folder's. */
+function nameIn(d: string): string {
+  try { const n = readToml(fs.readFileSync(path.join(d, "example.toml"), "utf8")).name; if (n) return n; } catch { /* none */ }
+  return path.basename(d);
 }
 /** The example a path lies in (the folder or one above it), or null. */
-export function exampleAbove(p: string): { id: string; root: string } | null {
+export function exampleAbove(p: string): (Example & { root: string }) | null {
   for (let d = path.resolve(p); path.dirname(d) !== d; d = path.dirname(d)) { const x = exampleAt(d); if (x) return { ...x, root: real(d) }; }
   return null;
 }
@@ -102,7 +143,7 @@ export class Hub {
   conf: HubConfig;
   /** An example where it is (paperboat-examples): read-only. Nothing is written in its folder: every change is
    *  refused (403), and what Malachite keeps of it (the log, the cells' outputs) goes to `state`. */
-  readonly example: { id: string } | null;
+  readonly example: Example | null;
   /** Where Malachite keeps the hub's own state: `.malachite/` in the hub; an example's outside it, in
    *  `<home>/cache/malachite/examples/<its id>/`. */
   readonly state: string;
@@ -116,7 +157,7 @@ export class Hub {
       const c = peek(this.root) ?? { schema: SCHEMA };
       if (c.schema > SCHEMA) throw new HubError(`this hub has schema ${c.schema}; this Malachite reads ${SCHEMA}. Update Malachite.`);
       this.conf = {
-        id: c.id || `h_${createHash("sha256").update(this.root).digest("hex").slice(0, 12)}`, name: c.name || path.basename(this.root), schema: SCHEMA,
+        id: c.id || `h_${createHash("sha256").update(this.root).digest("hex").slice(0, 12)}`, name: c.name || this.example.name, schema: SCHEMA,
         author: os.userInfo().username, created: c.created || "", keep: "always", ignore: c.ignore ?? ".malachite/out/ out/ *.tmp",
       };
       return;

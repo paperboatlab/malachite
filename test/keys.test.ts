@@ -25,16 +25,16 @@ test("Vim chosen in Settings: every window has it, i inserts, :w saves, Ctrl Ent
   fs.mkdirSync(path.join(hub, ".malachite"), { recursive: true });
   fs.writeFileSync(path.join(hub, ".malachite", "hub.toml"), 'id = "h_keystest"\nname = "keys"\nschema = 3\n');
   fs.writeFileSync(path.join(hub, "a.md"), NOTE);
-  // an example where paperboat-examples keeps it (golden.py at the checkout's top): read-only
-  const ex = path.join(tmp, "examples", "malachite", "lab");
+  // an example where paperboat says examples are (a stand-in CLI: `example list --json`'s root): read-only
+  const ex = path.join(tmp, "examples", "malachite", "lab"), bin = path.join(tmp, "paperboat");
   fs.mkdirSync(path.join(ex, ".malachite"), { recursive: true });
-  fs.writeFileSync(path.join(tmp, "examples", "golden.py"), "");
+  fs.writeFileSync(bin, `#!/bin/sh\necho '${JSON.stringify([{ app: "malachite", id: "malachite/lab", name: "Lab", path: ex, root: path.join(tmp, "examples") }])}'\n`, { mode: 0o755 });
   fs.writeFileSync(path.join(ex, "example.toml"), 'app = "malachite"\nname = "Lab"\n');
   fs.writeFileSync(path.join(ex, ".malachite", "hub.toml"), 'id = "h_keysexample"\nname = "lab"\nschema = 3\n');
   fs.writeFileSync(path.join(ex, "a.md"), NOTE);
 
-  const env = { PAPERBOAT_HOME: process.env.PAPERBOAT_HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME };
-  process.env.PAPERBOAT_HOME = path.join(tmp, "home"); process.env.XDG_CONFIG_HOME = conf;
+  const env = { PAPERBOAT_HOME: process.env.PAPERBOAT_HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME, PAPERBOAT_BIN: process.env.PAPERBOAT_BIN };
+  process.env.PAPERBOAT_HOME = path.join(tmp, "home"); process.env.XDG_CONFIG_HOME = conf; process.env.PAPERBOAT_BIN = bin;
   const { server } = serve(hub, 0, new Control(path.join(tmp, "none.sock"), false));
   await new Promise((r) => server.once("listening", r));
   const browser = await chromium.launch({ executablePath: chrome });
@@ -103,6 +103,8 @@ test("Vim chosen in Settings: every window has it, i inserts, :w saves, Ctrl Ent
     const r = await fetch(`${url}api/workspace`, { method: "POST", headers: { "content-type": "application/json", origin: url.slice(0, -1) }, body: JSON.stringify({ path: ex }) });
     assert.equal(r.status, 200, await r.text());
     const three = await open();
+    // its banner and Copy, though the window's URL has no ?example= (the server says it is one)
+    await three.getByRole("note", { name: "Lab: an example" }).getByRole("button", { name: /Copy/ }).waitFor({ timeout: 5000 });
     assert.match(await status(three), /NORMAL/);
     await three.locator(".cm-line").first().click();
     await three.keyboard.press("0");

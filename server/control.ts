@@ -11,6 +11,8 @@ export type Lease = {
   id: string; runtime: string; mode: string; owner: string; backend: string;
   state: "starting" | "running" | "idle" | "exited" | "failed"; error?: string;
   ipc: string; digest?: string; verified?: string; uptime_s?: number; idle_s?: number; project?: string;
+  /** A read-only project (an example's, pb#91), and the folder the runtime works in and may write. */
+  readonly?: boolean; work?: string;
 };
 export class ControlError extends Error {}
 

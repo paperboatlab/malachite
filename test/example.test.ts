@@ -2,6 +2,8 @@
 // of it (the log, the cells' outputs) goes outside it, it never joins the hubs this machine knows nor recent.json,
 // and the folder is left byte for byte as it was, its checkout's `git status` clean. A copy of it is a hub like
 // any other. Run against a real paperboat-examples checkout with PAPERBOAT_EXAMPLES_DIR set; else a stand-in.
+// paperboat says which folders are examples (pb#91): PAPERBOAT_EXAMPLE for the one a server was started on, and
+// `example list --json`'s `root`; a stand-in CLI (PAPERBOAT_BIN) answers here, as a newer or an older paperboat.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -11,7 +13,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { Control } from "../server/control.ts";
 import { History } from "../server/history.ts";
-import { Hub, exampleAbove, exampleAt } from "../server/hub.ts";
+import { Hub, exampleAbove, exampleAt, launched } from "../server/hub.ts";
 import { addRecent, known, recent, remember } from "../server/hubs.ts";
 import { serve } from "../server/main.ts";
 
@@ -42,6 +44,21 @@ function standIn(): string {
 }
 const checkout = process.env.PAPERBOAT_EXAMPLES_DIR ? fs.realpathSync(process.env.PAPERBOAT_EXAMPLES_DIR) : standIn();
 const tank = path.join(checkout, "malachite", "tank-lab"), furuta = path.join(checkout, "hubs", "furuta-lab");
+const TANK = { id: "malachite/tank-lab", name: "Tank Lab" }, FURUTA = { id: "hubs/furuta-lab", name: "Furuta Lab" };
+
+/** A stand-in paperboat CLI whose `example list --json` answers `entries`: with `root` (pb#91), or as an older
+ *  paperboat without. Each call is a new one, so Malachite asks it afresh. */
+function cli(entries: object[]) {
+  const dir = tmp("ex-cli-"), bin = path.join(dir, "paperboat");
+  fs.writeFileSync(path.join(dir, "list.json"), JSON.stringify(entries));
+  fs.writeFileSync(bin, `#!/bin/sh\ncat ${JSON.stringify(path.join(dir, "list.json"))}\n`, { mode: 0o755 });
+  process.env.PAPERBOAT_BIN = bin;
+}
+const newer = () => cli([
+  { app: "malachite", id: "hubs/furuta-lab", kind: "hub", name: "Furuta Lab", path: furuta, root: checkout },
+  { app: "malachite", id: "malachite/tank-lab", kind: "malachite", name: "Tank Lab", path: tank, root: checkout },
+]);
+newer();
 
 /** Every file and folder under `dir`, with its bytes' hash, mode and mtime: what "left as it was" means. */
 function snapshot(dir: string): Record<string, string> {
@@ -59,20 +76,72 @@ function snapshot(dir: string): Record<string, string> {
 }
 const gitStatus = () => (fs.existsSync(path.join(checkout, ".git")) ? execFileSync("git", ["status", "--porcelain", "--ignored"], { cwd: checkout, encoding: "utf8" }) : "");
 
-test("an example is found where paperboat-examples keeps it; a copy of it isn't one", () => {
-  assert.deepEqual(exampleAt(tank), { id: "malachite/tank-lab" });
-  assert.deepEqual(exampleAt(furuta), { id: "hubs/furuta-lab" });
-  assert.deepEqual(exampleAbove(path.join(tank, "projects")), { id: "malachite/tank-lab", root: tank });
+test("an example is found where paperboat says examples are; a copy of it isn't one", () => {
+  assert.deepEqual(exampleAt(tank), TANK);
+  assert.deepEqual(exampleAt(furuta), FURUTA);
+  assert.deepEqual(exampleAbove(path.join(tank, "projects")), { ...TANK, root: tank });
   assert.equal(exampleAt(checkout), null);
   const mine = path.join(tmp("ex-mine-"), "tank-lab");
   fs.cpSync(tank, mine, { recursive: true });
   assert.equal(exampleAt(mine), null, "a copy is the user's");
   assert.equal(new Hub(mine).example, null);
-  // GitHub's copy, kept in <home>/cache/examples: an example too (no golden.py needed)
+  // paperboat names its roots: a folder elsewhere that looks like one (the cache, when it isn't the root) is none
   const cached = path.join(home, "cache", "examples", "malachite", "tank-lab");
   fs.cpSync(tank, cached, { recursive: true });
-  assert.deepEqual(exampleAt(cached), { id: "malachite/tank-lab" });
+  assert.equal(exampleAt(cached), null);
   fs.rmSync(path.join(home, "cache", "examples"), { recursive: true });
+});
+
+test("an older paperboat names no root: $PAPERBOAT_EXAMPLES_DIR and GitHub's copy, nothing guessed", () => {
+  const was = process.env.PAPERBOAT_EXAMPLES_DIR;
+  try {
+    cli([{ app: "malachite", id: "malachite/tank-lab", name: "Tank Lab", path: tank }]);   // no root
+    delete process.env.PAPERBOAT_EXAMPLES_DIR;
+    assert.equal(exampleAt(tank), null, "a checkout is no example by itself (its golden.py is no sign)");
+    const cached = path.join(home, "cache", "examples", "malachite", "tank-lab");
+    fs.cpSync(tank, cached, { recursive: true });
+    assert.deepEqual(exampleAt(cached), TANK, "GitHub's copy, in <home>/cache/examples");
+    fs.rmSync(path.join(home, "cache", "examples"), { recursive: true });
+    process.env.PAPERBOAT_EXAMPLES_DIR = checkout;
+    assert.deepEqual(exampleAt(tank), TANK, "$PAPERBOAT_EXAMPLES_DIR");
+    process.env.PAPERBOAT_BIN = path.join(home, "no-paperboat");   // no CLI at all: the same markers
+    assert.deepEqual(exampleAt(furuta), FURUTA);
+  } finally {
+    if (was === undefined) delete process.env.PAPERBOAT_EXAMPLES_DIR; else process.env.PAPERBOAT_EXAMPLES_DIR = was;
+    newer();
+  }
+});
+
+test("PAPERBOAT_EXAMPLE says the folder this server started on is an example, wherever it is", async () => {
+  const dir = path.join(tmp("ex-flag-"), "lab");   // in no root paperboat names, and no hub (.malachite/) yet
+  fs.mkdirSync(dir);
+  fs.writeFileSync(path.join(dir, "example.toml"), 'app = "malachite"\nname = "Flag Lab"\n');
+  fs.writeFileSync(path.join(dir, "a.md"), "# A\n");
+  const before = snapshot(dir);
+  assert.equal(exampleAt(dir), null);
+  assert.equal(launched(dir, {}), null, "no variable: a plain folder");
+  try {
+    assert.deepEqual(launched(dir, { PAPERBOAT_EXAMPLE: "malachite/flag-lab" }), { id: "malachite/flag-lab", root: dir });
+    assert.deepEqual(exampleAt(dir), { id: "malachite/flag-lab", name: "Flag Lab" });
+    assert.deepEqual(exampleAbove(path.join(dir, "sub")), { id: "malachite/flag-lab", name: "Flag Lab", root: dir });
+    // the server, opened on it however the window was (no ?example=): the page gets its id and name for the banner
+    const { server } = serve(dir, 0, new Control(path.join(home, "none.sock"), false));
+    await new Promise((r) => server.once("listening", r));
+    const base = `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`;
+    try {
+      const ws = await fetch(`${base}/api/workspace`).then((r) => r.json());
+      assert.deepEqual(ws.workspace?.example, { id: "malachite/flag-lab", name: "Flag Lab" }, JSON.stringify(ws));
+      const r = await fetch(`${base}/api/note?path=a.md`, { method: "PUT", headers: { "content-type": "application/json", origin: base }, body: JSON.stringify({ text: "x" }) });
+      assert.equal(r.status, 403);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+    assert.ok(!known().some((k) => k.path === dir) && !recent().some((e) => e.path.startsWith(dir)), "in no list");
+  } finally {
+    launched(null);
+  }
+  assert.equal(exampleAt(dir), null, "another server on it, not started as the example: a folder of the user's");
+  assert.deepEqual(snapshot(dir), before, "nothing written in it");
 });
 
 test("every write to an example is refused, a run writes nothing in it, and it joins no list", async () => {
@@ -84,11 +153,11 @@ test("every write to an example is refused, a run writes nothing in it, and it j
     method, headers: { "content-type": body instanceof Blob ? "application/octet-stream" : "application/json", origin: base }, body: body instanceof Blob ? body : body && JSON.stringify(body),
   }).then(async (r) => ({ status: r.status, json: await r.json() }));
   try {
-    for (const [dir, id] of [[furuta, "hubs/furuta-lab"], [tank, "malachite/tank-lab"]]) {
+    for (const [dir, x] of [[furuta, FURUTA], [tank, TANK]] as const) {
       const opened = await call("POST", "/api/workspace", { path: dir });
       assert.equal(opened.status, 200, JSON.stringify(opened.json));
-      assert.deepEqual(opened.json.workspace.example, { id });
-      assert.deepEqual((await call("GET", "/api/hub")).json.example, { id });
+      assert.deepEqual(opened.json.workspace.example, x);
+      assert.deepEqual((await call("GET", "/api/hub")).json.example, x);
     }
     const md = "start-here.md";
     assert.ok(fs.existsSync(path.join(tank, md)) || !process.env.PAPERBOAT_EXAMPLES_DIR, "the checkout has Tank Lab's start-here.md");
