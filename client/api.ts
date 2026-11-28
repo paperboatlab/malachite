@@ -23,8 +23,9 @@ export type HubConf = { id: string; name: string; schema: number; author: string
 export type Place = "local" | "google-drive" | "onedrive" | "dropbox" | "icloud";
 export type KnownHub = { id: string; path: string; shown: string; place: Place; name: string; missing?: boolean; conflicts?: string[]; notes?: number };
 /** What Malachite works in (the kit's `Workspace`): a hub, or nothing (the Start page). */
-/** `example`: an example opened where it is (paperboat-examples), read-only: the server refuses every change. */
-export type Workspace = { kind: "hub"; root: string; name: string; hub: string; example?: { id: string } };
+/** `example`: an example opened where it is (paperboat-examples), read-only: the server refuses every change.
+ *  The server knows it however the window was opened (paperboat's PAPERBOAT_EXAMPLE, pb#91). */
+export type Workspace = { kind: "hub"; root: string; name: string; hub: string; example?: { id: string; name?: string } };
 /** Opening a workspace: the hub, and the file to open in it (a file opened from outside). */
 export type Entered = { workspace: Workspace | null; open?: string };
 export type Version = { id: string; time: string; author: string; what: string };

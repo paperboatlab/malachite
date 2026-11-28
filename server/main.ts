@@ -14,7 +14,7 @@ import { Index } from "./index.ts";
 import { bodyHash, parse, type Lang } from "./note.ts";
 import { NoSession, Sessions } from "./sessions.ts";
 import { History } from "./history.ts";
-import { Hub, HubError, SCHEMA, detach, exampleAbove, type HubKey } from "./hub.ts";
+import { Hub, HubError, SCHEMA, detach, exampleAbove, launched, type Example, type HubKey } from "./hub.ts";
 import { addRecent, conflictsIn, defaultFolder, dropRecent, forget, hubAbove, infos, placeOf, recent, readConfigFile, remember, saveSettings, settings, tilde, writeConfigFile, isScale, isTheme } from "./hubs.ts";
 
 export const DEFAULT_PORT = 30474;   // Malachite's home port (paperboat/apps.toml); other hubs get --port from the CLI (30500–30599)
@@ -32,7 +32,7 @@ const UPLOAD_MAX = 2 ** 31;   // 2 GiB: a video from a lab camera, not a disk im
 /** What is open: one hub with its history, index and sessions; `close` ends them (and saves the history). */
 type Open = { hub: Hub; history: History; index: Index; sessions: Sessions; saveSoon: () => void; holdSave: () => void; close: () => void };
 /** What the page works in (the kit's `Workspace`): Malachite works in hubs only; null is the Start page. */
-export type Workspace = { kind: "hub"; root: string; name: string; hub: string; example?: { id: string } } | null;
+export type Workspace = { kind: "hub"; root: string; name: string; hub: string; example?: Example } | null;
 
 /** `ask`: a plain folder the page offers to make a hub (NotAHub) instead of making it one unasked. */
 export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new Control(), ask?: string) {
@@ -433,8 +433,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(proces
     process.exit(0);
   }
   if (dir) fs.mkdirSync(dir, { recursive: true });
-  // a folder in a hub opens that hub; a plain one is the Start page, asking to make it one
-  const root = dir ? hubAbove(dir) : null;
+  // `paperboat example open` says the folder is an example (PAPERBOAT_EXAMPLE, pb#91): it opens as the hub, as it
+  // is; else a folder in a hub opens that hub, and a plain one is the Start page, asking to make it one
+  const root = dir ? (launched(dir) ? path.resolve(dir) : hubAbove(dir)) : null;
   const { server, hub } = serve(root, port, undefined, dir && !root ? path.resolve(dir) : undefined);
   server.on("listening", () => console.log(`Malachite: ${hub ? `${hub.name} (${hub.root})` : "no hub"} on http://127.0.0.1:${port}/`));
   server.on("error", (e) => { console.error(`malachite: ${e.message}`); process.exit(1); });

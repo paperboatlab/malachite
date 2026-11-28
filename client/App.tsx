@@ -161,12 +161,14 @@ export function App() {
   const wsId = ws?.hub ?? null;
   const wsRef = useRef(wsId);
   wsRef.current = wsId;
-  // an example opened where it is: the server says so (however it was opened), as does this window's URL for the
-  // hub it first opened. Read-only: nothing on the page changes it (the server refuses anyway); its banner copies it
+  // an example opened where it is: the server says so, with its name, however the window was opened (with or
+  // without ?example=, paperboat tells it: pb#91), as does this window's URL for the hub it first opened.
+  // Read-only: nothing on the page changes it (the server refuses anyway); its banner copies it
   const firstHub = useRef<string | null | undefined>(undefined);
   if (firstHub.current === undefined && ws !== undefined) firstHub.current = wsId;
   const example = ws?.example ?? (opened && ws && ws.hub === firstHub.current ? { id: opened.id } : undefined);
-  const locked = example ? `${opened?.id === example.id ? opened.name : ws?.name ?? "It"} is an example: copy it to change it` : undefined;
+  const exampleName = example && (opened?.id === example.id ? opened.name : example.name ?? ws?.name ?? "It");
+  const locked = example ? `${exampleName} is an example: copy it to change it` : undefined;
   const ro = !!locked;
   const lockedRef = useRef(locked);
   lockedRef.current = locked;
@@ -716,7 +718,7 @@ export function App() {
           onOpenFolder={openFolder} onOpenFile={openFile} onNew={() => setDlg("connect")} onConnect={() => setDlg("connect")} onNewHub={newHub} onRecent={onRecent} />}
       </section></div></main>}
       {ws && <main className="pages">
-        {example && <ExampleBanner name={opened?.id === example.id ? opened.name : hub?.name ?? ws.name} folder={opened?.to && tilde(opened.to, home)} cache={opened?.cache} onCopy={copyTo} />}
+        {example && <ExampleBanner name={exampleName!} folder={opened?.to && tilde(opened.to, home)} onCopy={copyTo} />}
         {page === "notes" && (
           <div className="notes-page">
             <Panel name={trashOpen ? "Trash" : "Files"} count={trashOpen ? undefined : `${items.length}`} side="left" hidden={hideL} onHidden={setHideL} icon="a-notes" width={262}

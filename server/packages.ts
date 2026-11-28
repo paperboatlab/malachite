@@ -2,13 +2,18 @@
 // session's project is the hub (`julia --project`), and its packages live in the deps volume paperboatd keeps
 // per runtime and project path. A Manifest.toml whose packages that volume lacks (a hub copied, moved or
 // synced from another machine, a fresh install, an example) is instantiated first: a short exec lease with
-// the network for that step only, the project left read-only (the Manifest stays as it is; an example is
-// never written). Python has no such step: `paperboat package add python` records nothing in the hub.
+// the network for that step only, the project left read-only (the Manifest stays as it is; an example's is
+// a `readonly` lease, never written). Python has no such step: `paperboat package add python` records nothing in the hub.
 import fs from "node:fs";
 import path from "node:path";
 import type { Control, Lease } from "./control.ts";
+import type { Hub } from "./hub.ts";
 
 export class PackageError extends Error {}
+
+/** What every lease on a hub asks for beside its project: an example's runtime may read and run it but never
+ *  write into it (`readonly`, pb#91), which paperboatd enforces on every backend or refuses the backend. */
+export const readonly = (hub: Pick<Hub, "example">) => (hub.example ? { readonly: true } : {});
 
 /** The packages a Manifest.toml records from a registry or a repository (not the standard library's, nor a
  *  developed path's): their name, uuid and tree hash. */
@@ -64,9 +69,9 @@ export function latest(log: string): string | undefined {
 
 /** Installs the hub's Manifest into its deps volume; `progress` gets Pkg's latest line. `signal` stops it (the
  *  session was stopped before it started): its lease is released either way. */
-export async function instantiate(control: Control, root: string, owner: string, signal?: AbortSignal, progress?: (line: string) => void): Promise<void> {
+export async function instantiate(control: Control, hub: Hub, owner: string, signal?: AbortSignal, progress?: (line: string) => void): Promise<void> {
   const lease = await control.call<Lease>("acquire", {
-    runtime: "julia", mode: "exec", project: root, owner, command: ["julia", "--startup-file=no", "-e", INSTANTIATE], policy: { network: true },
+    runtime: "julia", mode: "exec", project: hub.root, ...readonly(hub), owner, command: ["julia", "--startup-file=no", "-e", INSTANTIATE], policy: { network: true },
   });
   try {
     for (let state = lease.state, shown = ""; state !== "exited" && state !== "failed";) {   // polls: exec leases report no progress event
