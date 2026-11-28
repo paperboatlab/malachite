@@ -178,3 +178,24 @@ export function settings(): { version: 1; theme: Theme; scale: Scale } {
 export function saveSettings(change: { theme?: Theme; scale?: Scale }) {
   writeJson("settings.json", { ...readJson("settings.json"), ...change, version: 1 });
 }
+
+/** `malachite.toml`, the editor settings file (the kit's ConfigStore: [editor] and [themes.<name>], as Julix keeps
+ *  julix.toml and Articula articula.toml): $XDG_CONFIG_HOME/paperboat (else ~/.config/paperboat; %APPDATA%\paperboat
+ *  on Windows). One file for every Malachite window, whatever port its page is on, where the page's own storage is per port. */
+export function configFile(): string {
+  const env = process.env;
+  const dir = process.platform === "win32" ? env.APPDATA || path.join(os.homedir(), "AppData", "Roaming") : env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+  return path.join(dir, "paperboat", "malachite.toml");
+}
+/** The file as the page shows it (`~` for the home folder) and its text, null while there is none. */
+export function readConfigFile(): { path: string; text: string | null } {
+  const f = configFile();
+  try { return { path: tilde(f), text: fs.readFileSync(f, "utf8") }; } catch { return { path: tilde(f), text: null }; }
+}
+/** The whole file, written to a temp file and renamed. */
+export function writeConfigFile(text: string) {
+  const f = configFile(), tmp = `${f}.${process.pid}.tmp`;
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(tmp, text);
+  fs.renameSync(tmp, f);
+}

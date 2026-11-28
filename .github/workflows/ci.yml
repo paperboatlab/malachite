@@ -13,5 +13,5 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run build   # before the tests: keys.test.ts drives the built page in Chrome
       - run: npm test
-      - run: npm run build

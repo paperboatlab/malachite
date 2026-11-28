@@ -1,5 +1,6 @@
 // The app server's API (server/main.ts), typed for the page.
 import type { Example, Scale, Theme } from "@paperboatlab/ui";
+import type { ConfigStore } from "@paperboatlab/ui/editor";
 import type { RecentEntry } from "@paperboatlab/ui/workspace";
 export type Entry = { path: string; name: string; kind: "dir" | "file"; size?: number; mtime?: number; children?: Entry[] };
 export type Props = Record<string, string | string[]>;
@@ -51,6 +52,9 @@ export const api = {
   settings: () => call<{ version: 1; theme: Theme; scale: Scale }>("GET", "/api/settings"),
   setTheme: (theme: Theme) => call("PUT", "/api/settings", { theme }),
   setScale: (scale: Scale) => call("PUT", "/api/settings", { scale }),
+  /** malachite.toml, the editor settings file: its path as shown and its text (null while there is none). */
+  config: () => call<{ path: string; text: string | null }>("GET", "/api/config"),
+  setConfig: (text: string) => call("PUT", "/api/config", { text }),
   hubForget: (id: string) => call("POST", "/api/hubs/remove", { id }),
   apps: () => call<{ name: string; label: string }[]>("GET", "/api/apps"),
   openIn: (app: string, p: string, copy: boolean) => call<{ url: string; folder: string; file: string }>("POST", "/api/apps/open", { app, path: p, copy }),
@@ -104,6 +108,9 @@ export const api = {
 };
 
 /** The index with a watcher event's changes: items updated or added, paths gone; the order stays the server's. */
+/** malachite.toml as the kit's editor settings read and write it (useEditorSettings). */
+export const config: ConfigStore = { read: () => api.config(), write: (text) => api.setConfig(text).then(() => undefined) };
+
 export function patchItems(items: Item[], updated: Item[], gone: string[]): Item[] {
   const upd = new Map(updated.map((i) => [i.path, i])), out = new Set(gone);
   const next = items.filter((i) => !out.has(i.path)).map((i) => { const u = upd.get(i.path); upd.delete(i.path); return u ?? i; });
