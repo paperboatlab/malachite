@@ -241,7 +241,8 @@ export function App() {
       if (e.state === "stopped") setRunning((m) => ({ ...m, [e.lang]: false }));
       // a session starting is background work (a container may be pulled): one toast, working, then its end
       const name = e.lang === "julia" ? "Julia" : "Python", id = sessionNote.current[e.lang as Lang];
-      if (e.state === "starting") sessionNote.current[e.lang as Lang] = show({ title: `Starting the ${name} session`, detail: "the cell runs once it is up", state: "working" });
+      // a start says what it does past the first word: the hub's Julia packages installed, the runtime downloaded
+      if (e.state === "starting") sessionNote.current[e.lang as Lang] = show({ ...(id && { id }), title: `Starting the ${name} session`, detail: (e.detail as string | undefined) ?? "the cell runs once it is up", state: "working" });
       else if (id && e.state === "running") show({ id, title: `${name} session started`, state: "done" });
       else if (id && e.state === "failed") show({ id, title: `${name} session didn't start`, detail: `${e.error} · the Runtimes key in the bar`, state: "failed" });
       if (e.state !== "starting") delete sessionNote.current[e.lang as Lang];
@@ -376,6 +377,12 @@ export function App() {
 
   const runCell = (c: Cell) => { if (current) api.run(current, c.hash).then((r) => setRuns((m) => ({ ...m, [c.hash]: r })), fail); };
   const stopCell = (c: Cell) => { api.interrupt(c.lang).catch(fail); };
+  /** Note › Run all cells: what is typed saved first, then every cell in order, whatever its language. */
+  const runAll = async () => {
+    if (!current) return;
+    if (draft.current) await flush.current();
+    api.runAll(current).then((rs) => setRuns((m) => ({ ...m, ...Object.fromEntries(rs.map((r) => [r.hash, r])) })), fail);
+  };
   const onLink = (target: string, missing: boolean) => {
     if (!missing) return open(target);
     if (locked) return show({ title: `${target} isn't in the example`, detail: locked, state: "failed" });
@@ -571,6 +578,7 @@ export function App() {
     { id: "view.theme", label: "Theme", menu: "view", group: "theme", quiet: true, run: () => {},
       sub: THEMES.map((t): MenuEntry => ({ id: `theme.${t}`, label: t[0].toUpperCase() + t.slice(1), checked: theme === t, run: () => changeTheme(t) })) },
     ...noteMenu().flatMap((m): Command[] => (typeof m === "object" && "run" in m ? [{ id: `note.${m.id}`, label: m.label, menu: "note", group: "cells", ...needNote(mode !== "read" && !m.disabled), run: m.run }] : [])),
+    { id: "note.runall", label: "Run all cells", icon: "play", menu: "note", group: "run", ...needNote(!!note?.cells.length && !note.sealed), run: () => { runAll(); } },
     { id: "note.seal", label: "Seal…", icon: "lock", menu: "note", group: "note", ...needNote(!note?.sealed), ...noChange, run: () => note && actions.seal(note.path) },
     { id: "note.graph", label: "Show in graph", menu: "note", group: "note", ...needNote(), run: () => note && actions.graph(note.path) },
     { id: "note.jl", label: "Restart the Julia session", menu: "note", group: "sessions", ...noHub, run: () => { api.restart("julia").catch(fail); } },
