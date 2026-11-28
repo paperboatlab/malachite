@@ -11,7 +11,8 @@ Running cells
 
 **Run** on a cell runs it in the note's folder. Cells of one language run one after another, and every
 note of the hub shares the language's session: a variable set in one note is there in the next.
-**Note › Run all cells** runs the note's cells from the top, in order whatever their language; once a
+In the note's editor, :kbd:`Ctrl Enter` runs the cell the cursor is in (in Edit, where the cell is text).
+**Note › Run all cells** (:kbd:`Ctrl Shift Enter`) runs the note's cells from the top, in order whatever their language; once a
 cell fails or is stopped, the cells after it are skipped and keep the outputs they had.
 
 **Stop** interrupts the running cell. A cell that doesn't stop within 3 s (a Julia loop that never

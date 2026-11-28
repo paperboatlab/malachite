@@ -9,7 +9,7 @@ import {
   type Command, type CommandMenu, type Credit, type Example, type MenuEntry, type Scale, type SearchItem, type Theme,
 } from "@paperboatlab/ui";
 import { Editor, EditorSettingsPane, EditorTabs, afterClose, languageFor, livePreview, markdown, orderTabs, tabMenu, useEditorSettings, type Session } from "@paperboatlab/ui/editor";
-import { EditorView } from "@codemirror/view";
+import { EditorView, type KeyBinding } from "@codemirror/view";
 import { FileTree, type FileEntry } from "@paperboatlab/ui/files";
 import { ConnectHub, HubSettings, OpenFile, SaveFile, type Hub as KitHub } from "@paperboatlab/ui/hub";
 import { NotAHub, Start, TypedPath, Unsaved, WorkspaceWell, baseName, fileMenu as fileCommands, recentFor, recentMenu, shell, tilde, useOpening, type RecentEntry } from "@paperboatlab/ui/workspace";
@@ -18,7 +18,7 @@ import { Plot2D, type PlotSeries } from "@paperboatlab/ui/plot";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { join, patch, split } from "../server/frontmatter.ts";
-import { api, listen, patchItems, type Cell, type Entered, type HubConf, type KnownHub, type Place, type Workspace, type Entry, type Item, type Lang, type Links, type LogEvent, type NoteData, type Props, type Run } from "./api.ts";
+import { api, config, listen, patchItems, type Cell, type Entered, type HubConf, type KnownHub, type Place, type Workspace, type Entry, type Item, type Lang, type Links, type LogEvent, type NoteData, type Props, type Run } from "./api.ts";
 import { fileMenu, type FileActions } from "./fileMenu.ts";
 import { FileGlyph, OWNER, TEXT, mediaOf, typeOf } from "./files.tsx";
 import { MediaEmbed } from "./Media.tsx";
@@ -52,6 +52,23 @@ async function hashOf(lang: Lang, code: string) {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${lang}\n${code}`));
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
 }
+/** The cell around `pos` in a note's text (server/note.ts parse's fences): its language and code, else null. */
+function cellAt(text: string, pos: number): { lang: Lang; code: string; line: number } | null {
+  const front = text.length - split(text).body.length, lines = text.slice(front).split("\n");
+  const LANGS: Record<string, Lang> = { julia: "julia", jl: "julia", python: "python", py: "python" };
+  let at = front;
+  for (let i = 0; i < lines.length; i++) {
+    const fence = /^(`{3,}|~{3,})\s*([\w+-]*)/.exec(lines[i]);
+    if (!fence) { at += lines[i].length + 1; continue; }
+    let j = i + 1, end = at + lines[i].length + 1;
+    while (j < lines.length && !(/^(`{3,}|~{3,})\s*$/.test(lines[j]) && lines[j][0] === fence[1][0])) end += lines[j++].length + 1;
+    const lang = LANGS[fence[2].toLowerCase()];
+    if (pos >= at && pos <= end + (lines[j]?.length ?? 0)) return lang ? { lang, code: lines.slice(i + 1, j).join("\n"), line: i } : null;
+    at = end + (j < lines.length ? lines[j].length + 1 : 0);
+    i = j;
+  }
+  return null;
+}
 /** a/b/../c → a/c */
 const normalise = (p: string) => p.split("/").reduce<string[]>((o, s) => (s === ".." ? o.slice(0, -1) : s && s !== "." ? [...o, s] : o), []).join("/");
 type Ask = { title: string; label?: string; value?: string; danger?: boolean; note?: string; ok: string; run: (v: string) => void };
@@ -60,6 +77,10 @@ const isBool = (v: unknown): v is boolean => typeof v === "boolean";
 const isStr = (v: unknown): v is string => typeof v === "string";
 const isList = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
 const dirOf = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
+// a read-only editor (an example, a sealed note) the kit leaves unfocusable; this one takes the focus and its
+// state stays read-only, so Vim's and Helix's keys move about it and `:w` reaches Malachite's Save, which says why
+// not (the kit's Editor puts `extra` ahead of its read-only: the first editable value wins)
+const FOCUSABLE = EditorView.editable.of(true);
 const nameOf = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 // the editor asks the hub's running session (lint, complete): /api/ask answers only while one runs
 const SESSIONS: Record<Lang, Session> = {
@@ -77,8 +98,9 @@ export function App() {
   const [scale, setScale] = useState<Scale>(() => readStored("paperboat.scale", isScale) ?? 1);
   useScale(scale);
   // Settings › Editor: the note's editor, its cells and the other files
-  // ponytail: in this browser's localStorage, as Julix's; the shared settings file once Malachite has a ConfigStore
-  const [editor, setEditor] = useEditorSettings(undefined, "malachite.editor");
+  // in malachite.toml (the kit's ConfigStore), so every Malachite window has them whatever its port; this browser's
+  // copy (malachite.editor) paints the first frame and seeds a first file, which is how an older choice carries over
+  const [editor, setEditor, editorFile] = useEditorSettings(config, "malachite.editor");
   const look: CodeLook = useMemo(() => ({ settings: editor, appTheme: shown }), [editor, shown]);
   const noteSize = useNoteSize();   // the note text's size (the status bar's − 100 % +, Ctrl = and Ctrl -)
   // a note's text always wraps, at the note text's size
@@ -305,7 +327,16 @@ export function App() {
   const unsavedRef = useRef(unsaved);
   unsavedRef.current = unsaved;
   const flush = useRef(async () => {});
-  flush.current = async () => { clearTimeout(timer.current); const d = draft.current; if (d) await save(d.path, d.text); };
+  const saving = useRef<{ d: { path: string; text: string }; done: Promise<void> } | null>(null);
+  flush.current = async () => {
+    clearTimeout(timer.current);
+    const d = draft.current;
+    if (!d) return;
+    if (saving.current?.d === d) return saving.current.done;   // Ctrl S heard twice (the editor's key and the window's): one save
+    const done = save(d.path, d.text);
+    saving.current = { d, done };
+    try { await done; } finally { if (saving.current?.d === d) saving.current = null; }
+  };
   const arm = () => { clearTimeout(timer.current); timer.current = window.setTimeout(() => { if (!unsavedRef.current) flush.current(); }, 700); };   // asking Save or Don't save: it waits for the answer
   useEffect(() => { if (!unsaved && draft.current) arm(); }, [unsaved]);
   /** A key in an editor: the text is held, the save armed; the page redraws only when it becomes dirty. */
@@ -389,6 +420,30 @@ export function App() {
     setAsk({ title: `Create ${target}?`, label: "Title", value: target, ok: "Create", run: (t) => api.create(current ? dirOf(current) : "", t).then((r) => { reload(); open(r.path); }, fail) });
   };
 
+  // the note editor's own keys, ahead of Vim's or Helix's mode: Ctrl S (what :w runs), Ctrl Enter the cell at the
+  // cursor, Ctrl Shift Enter every cell
+  const keyAct = useRef({ save: () => {}, run: (_v: EditorView): boolean => false, runAll: () => {} });
+  keyAct.current = {
+    save: () => {
+      if (lockedRef.current) show({ title: "Not saved: the example is read-only", detail: `${lockedRef.current} (the banner's Copy)`, state: "failed" });
+      else if (!draft.current && note?.sealed && note.path === currentRef.current) show({ title: "Not saved: the note is sealed", detail: "its body is frozen: corrections go in a new note", state: "failed" });
+      else flush.current();
+    },
+    run: (v) => {
+      const c = cellAt(v.state.doc.toString(), v.state.selection.main.head);
+      if (!c || !note || note.sealed) return false;
+      hashOf(c.lang, c.code).then((hash) => liveAct.current.run({ ...c, hash }));
+      return true;
+    },
+    runAll: () => { if (note?.cells.length && !note.sealed) runAll(); },
+  };
+  const noteKeys = useMemo<KeyBinding[]>(() => [
+    { key: "Mod-s", preventDefault: true, run: () => { keyAct.current.save(); return true; } },
+    { key: "Mod-Enter", preventDefault: true, run: (v) => keyAct.current.run(v) },
+    { key: "Mod-Shift-Enter", preventDefault: true, run: () => { keyAct.current.runAll(); return true; } },
+  ], []);
+  const fileKeys = useMemo<KeyBinding[]>(() => [noteKeys[0]], [noteKeys]);
+
   // Live: the editor with the kit's live preview; its links open like Read's, its cells are Read's cells
   // (drawn into the editor, run after a save), its properties the table above it
   const liveView = useRef<EditorView | null>(null);
@@ -468,6 +523,8 @@ export function App() {
     },
   }), []);
   const liveExt = useMemo(() => [live, dropExt], [live, dropExt]);
+  const fixed = !!note?.sealed || ro;
+  const noteExt = useMemo(() => [mode === "live" ? liveExt : dropExt, fixed ? FOCUSABLE : []], [mode, liveExt, dropExt, fixed]);
   /** The properties table's change, made in the editor (so it undoes, and saves like typing). */
   const setProps = (next: Props) => {
     const v = liveView.current;
@@ -578,7 +635,7 @@ export function App() {
     { id: "view.theme", label: "Theme", menu: "view", group: "theme", quiet: true, run: () => {},
       sub: THEMES.map((t): MenuEntry => ({ id: `theme.${t}`, label: t[0].toUpperCase() + t.slice(1), checked: theme === t, run: () => changeTheme(t) })) },
     ...noteMenu().flatMap((m): Command[] => (typeof m === "object" && "run" in m ? [{ id: `note.${m.id}`, label: m.label, menu: "note", group: "cells", ...needNote(mode !== "read" && !m.disabled), run: m.run }] : [])),
-    { id: "note.runall", label: "Run all cells", icon: "play", menu: "note", group: "run", ...needNote(!!note?.cells.length && !note.sealed), run: () => { runAll(); } },
+    { id: "note.runall", label: "Run all cells", icon: "play", menu: "note", group: "run", shortcut: "Ctrl Shift Enter", ...needNote(!!note?.cells.length && !note.sealed), run: () => { runAll(); } },
     { id: "note.seal", label: "Seal…", icon: "lock", menu: "note", group: "note", ...needNote(!note?.sealed), ...noChange, run: () => note && actions.seal(note.path) },
     { id: "note.graph", label: "Show in graph", menu: "note", group: "note", ...needNote(), run: () => note && actions.graph(note.path) },
     { id: "note.jl", label: "Restart the Julia session", menu: "note", group: "sessions", ...noHub, run: () => { api.restart("julia").catch(fail); } },
@@ -692,8 +749,8 @@ export function App() {
                 {note && mode === "read" && <ReadView note={note} runs={runs} resolve={resolve} look={look} onLink={onLink} onRun={runCell} onStop={stopCell} media={mediaFor} />}
                 {note && mode !== "read" && (() => {
                   const editor = <Editor key={`${note.path}:${note.sealed}:${mode}:${restored}`} value={draft.current?.path === note.path ? draft.current.text : note.text} language={markdown} settings={prose} appTheme={look.appTheme}
-                    readOnly={note.sealed || ro} ariaLabel={`${note.title}, Markdown`} onChange={(text) => typed(note.path, text)}
-                    extra={mode === "live" ? liveExt : dropExt} onView={(v) => { liveView.current = v; }} />;
+                    readOnly={note.sealed || ro} ariaLabel={`${note.title}, Markdown`} keys={noteKeys} onChange={(text) => typed(note.path, text)}
+                    extra={noteExt} onView={(v) => { liveView.current = v; }} />;
                   return (
                     <div className={`edit ${mode}`} onContextMenu={(e) => { if ((e.target as HTMLElement).closest(".cm-editor")) { e.preventDefault(); setCtx({ x: e.clientX, y: e.clientY, at: liveView.current?.posAtCoords({ x: e.clientX, y: e.clientY }) ?? null }); } }}>
                       {mode === "live" ? <div className="livecol">
@@ -709,7 +766,7 @@ export function App() {
                     </div>
                   );
                 })()}
-                {current && t !== "md" && <FileView path={current} text={plain} look={look} readOnly={ro} onChange={(text) => typed(current, text)} media={mediaFor} apps={apps}
+                {current && t !== "md" && <FileView path={current} text={plain} look={look} readOnly={ro} keys={fileKeys} onChange={(text) => typed(current, text)} media={mediaFor} apps={apps}
                   onApp={(app, copy) => { const label = apps.find((a) => a.name === app)?.label ?? app;
                     api.openIn(app, current, copy).then((r) => { window.open(r.url, label);  /* named: the Launcher opens it as that app's window */ show({ title: copy ? `Copied to ${label}` : `Opened in ${label}`, detail: copy ? `${r.folder}/${r.file} · not in the hub` : `${label} works in ${hub?.name ?? "the hub"}`, state: "done" }); }, fail); }} />}
               </div>
@@ -764,7 +821,7 @@ export function App() {
           </SettingsSection>
           <p className="settings-note">Nothing here to change yet: this is how Malachite works today.</p>
         </> },
-        { id: "editor", label: "Editor", icon: "file-code", body: <EditorSettingsPane settings={editor} onSettings={setEditor} lintNote="Julia and Python, by the hub's running session" /> },
+        { id: "editor", label: "Editor", icon: "file-code", body: <EditorSettingsPane settings={editor} onSettings={setEditor} lintNote="Julia and Python, by the hub's running session" file={editorFile} /> },
         { id: "hub", label: "Hub", icon: "folder", body: hub && ro
           ? <SettingsSection title={hub.name}>
             <SettingRow label="An example" hint={`${locked}: its settings are the example's own, and it keeps no versions`}>
@@ -828,7 +885,7 @@ function CsvPlot({ text }: { text: string }) {
 
 /** A file that isn't a note: another app's (its name and type), an image, or text in the kit's editor
  *  with its language, linted and completed by the hub's session for Julia and Python. */
-function FileView({ path, text, look, readOnly, onChange, media, apps, onApp }: { path: string; text: string | null; look: CodeLook; readOnly?: boolean; onChange: (t: string) => void; media: (p: string, alt: string) => React.ReactNode; apps: { name: string; label: string }[]; onApp: (app: string, copy: boolean) => void }) {
+function FileView({ path, text, look, readOnly, keys, onChange, media, apps, onApp }: { path: string; text: string | null; look: CodeLook; readOnly?: boolean; keys: readonly KeyBinding[]; onChange: (t: string) => void; media: (p: string, alt: string) => React.ReactNode; apps: { name: string; label: string }[]; onApp: (app: string, copy: boolean) => void }) {
   const t = typeOf(path), owner = OWNER[t], language = languageFor(path);
   const app = owner && apps.find((a) => a.label === owner || a.name === owner.toLowerCase());
   const session = language.runtime === "julia" || language.runtime === "python" ? SESSIONS[language.runtime] : undefined;
@@ -845,7 +902,7 @@ function FileView({ path, text, look, readOnly, onChange, media, apps, onApp }: 
       {mediaOf(path) && media(path, "")}
       {t === "csv" && text !== null && <CsvPlot text={text} />}
       {text !== null && (
-        <div className="fedit"><Editor key={path} value={text} language={language} session={session} settings={look.settings} appTheme={look.appTheme} ariaLabel={`${nameOf(path)}, ${language.label}`} readOnly={readOnly} onChange={onChange} /></div>
+        <div className="fedit"><Editor key={path} value={text} language={language} session={session} settings={look.settings} appTheme={look.appTheme} ariaLabel={`${nameOf(path)}, ${language.label}`} readOnly={readOnly} keys={keys} extra={readOnly ? FOCUSABLE : undefined} onChange={onChange} /></div>
       )}
     </div>
   );

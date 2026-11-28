@@ -66,7 +66,14 @@ Settings (File › Settings…, the rail's Settings, Ctrl ,) is one window with 
 General (the theme, Light, Dark or System, and the interface scale, Compact (75 %), Default or Large (125 %), which sizes text, icons and keys alike;
 both apply to every Paperboat app; View › Theme sets the theme too), Malachite (how notes open and where cells run), Editor (the code's colours, font,
 size, tabs, wrapping, completion and lint, for notes, cells and other files; a note's text always
-wraps), Hub (the open hub's name, author, history and folder; with no hub open, Connect to a hub…)
+wraps; and the Keys, Standard, Vim or Helix), Hub (the open hub's name, author, history and folder; with no hub open, Connect to a hub…)
 and Shortcuts.
+
+The Editor settings are kept in ``malachite.toml`` (``~/.config/paperboat/``), so every Malachite window
+has them, whatever its port, and keeps them after a restart; edit it by hand and Malachite reads it again
+when its window regains focus. With Vim or Helix, the mode and the ``:`` line show under the text, ``:w``
+saves the note (in an example it says the example is read-only), and Malachite's keys still work in every
+mode: :kbd:`Ctrl S` saves, :kbd:`Ctrl Enter` runs the cell the cursor is in (in Edit) and
+:kbd:`Ctrl Shift Enter` runs all the note's cells.
 
 .. note:: Not written yet: a first note with a cell, a link and a property, with a screenshot.

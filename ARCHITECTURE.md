@@ -50,6 +50,9 @@ flowchart LR
   `placeOf` names it from the path (Dropbox, OneDrive, Google Drive, iCloud Drive), and `conflictsIn`
   finds the copies a sync client leaves when two machines change a file (marked in the tree, told on
   open). Paperboat syncs nothing itself; the per-machine history bundles make that safe.
+  Also `malachite.toml` under `$XDG_CONFIG_HOME/paperboat` (as Julix's `julix.toml`), the editor settings
+  the kit's `useEditorSettings` reads and writes (`GET`/`PUT /api/config`), one file for every Malachite
+  window whatever its port; a window's older localStorage copy (`malachite.editor`) seeds a first file.
   It also keeps Malachite's side of the shared store (plans/2026-11-26_11-05_one_file_workflow.md, "The
   contract every app follows"): `recent.json` (hubs and notes as they open, newest first, 40 at most, every
   app's entries kept) and `settings.json` (the theme), both written whole to a temporary file, then renamed;
@@ -132,7 +135,8 @@ flowchart LR
   RuntimesKey), the one file workflow (`/workspace`: Start, WorkspaceWell, fileMenu, recentMenu, NotAHub,
   Unsaved, TypedPath, shell; `/hub`: ConnectHub, OpenFile, SaveFile, HubSettings), the file tree (`/files`), the editor with its
   languages, themes, tab strip and settings (`/editor`, `EditorTabs`, `EditorSettingsPane`:
-  notes as Markdown, cells read-only, code files linted and completed by the hub's session through
+  notes as Markdown, cells read-only; the note's keys `Mod-s` (what Vim's and Helix's `:w` runs),
+  `Mod-Enter` (the cell at the cursor) and `Mod-Shift-Enter` (Run all) go in its `keys`, ahead of the mode; code files linted and completed by the hub's session through
   `POST /api/ask`), the plot (`/plot`), the graph layout (`/canvas`, drawn with React Flow). Malachite
   draws none of these itself.
 

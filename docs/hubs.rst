@@ -48,6 +48,10 @@ then renamed):
 - ``settings.json``: the theme every app starts in (``light``, ``dark`` or ``system``). Changing it in
   one app writes it here.
 
+Malachite's editor settings (Settings › Editor: colours, font, keys…) are in ``malachite.toml`` under
+``$XDG_CONFIG_HOME/paperboat`` (``~/.config/paperboat``; ``%APPDATA%\paperboat`` on Windows), as
+Julix keeps ``julix.toml``.
+
 Cloud hubs
 ----------
 
