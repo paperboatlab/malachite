@@ -9,7 +9,7 @@ export type Output =
   | { type: "display" | "result"; data: Record<string, string> }
   | { type: "error"; error: { type?: string; message: string; traceback?: string } };
 export type Lang = "julia" | "python";
-export type Run = { note: string; hash: string; lang: Lang; state: "queued" | "running" | "done" | "failed"; ran?: string; ms?: number; outputs: Output[]; runtime?: { name: string; version: string; backend: string } };
+export type Run = { note: string; hash: string; lang: Lang; state: "queued" | "running" | "done" | "failed" | "skipped"; ran?: string; ms?: number; outputs: Output[]; runtime?: { name: string; version: string; backend: string } };
 export type Cell = { lang: Lang; code: string; hash: string; line: number };
 export type NoteData = { path: string; text: string; props: Props; body: string; title: string; cells: Cell[]; sealed: boolean; intact?: boolean; outputs: Record<string, Run> };
 export type LogEvent = { time: string; actor: string; action: string; target?: string; details?: Record<string, unknown> } | { damaged: string };
@@ -77,6 +77,8 @@ export const api = {
   links: (p: string) => call<Links>("GET", `/api/links?path=${q(p)}`),
   log: () => call<LogEvent[]>("GET", "/api/log?limit=300"),
   run: (p: string, hash: string) => call<Run>("POST", "/api/run", { path: p, hash }),
+  /** Every cell of the note, in order; after one fails the rest are skipped. */
+  runAll: (p: string) => call<Run[]>("POST", "/api/run-all", { path: p }),
   interrupt: (lang: Lang) => call("POST", "/api/interrupt", { lang }),
   restart: (lang: Lang) => call("POST", "/api/restart", { lang }),
   /** Manage runtimes…: the Paperboat Launcher on its Runtimes page. */

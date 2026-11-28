@@ -118,6 +118,7 @@ export function CellView({ cell, n, run, sealed, look, onRun, onStop }: { cell: 
         <span className="tag">{cell.lang}</span><span>[{n}]</span>
         {run?.state === "running" && <span className="runs"><Spinner size={12} /> running</span>}
         {run?.state === "queued" && <span>queued</span>}
+        {run?.state === "skipped" && <span title="Run all stopped at a cell before this one">skipped</span>}
         {run?.ms !== undefined && !busy && <span title={run.ran}>· {run.ms < 1000 ? `${run.ms} ms` : `${(run.ms / 1000).toFixed(1)} s`} · {run.ran ? new Date(run.ran).toTimeString().slice(0, 5) : ""}</span>}
         <span className="row-end">
           {busy ? <Key size="sm" icon="debug-stop" onClick={onStop} title="Stop (restarts the session if it doesn't stop)">Stop</Key>

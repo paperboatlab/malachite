@@ -284,6 +284,7 @@ export function serve(hubDir: string | null, port = DEFAULT_PORT, control = new 
           return stream(res, abs, { "content-type": TYPES[path.extname(abs).toLowerCase()] ?? "application/octet-stream", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:", "x-content-type-options": "nosniff", "cache-control": "no-cache" }, req.headers.range);
         }
         case "POST /api/run": return send(res, 200, sessions.run(String(body.path), String(body.hash)));
+        case "POST /api/run-all": return send(res, 200, sessions.runAll(String(body.path)));
         case "POST /api/interrupt": return send(res, 200, await sessions.interrupt(lang(body.lang)));
         case "POST /api/restart": return send(res, 200, sessions.restart(lang(body.lang)));
         case "GET /api/runtimes": return send(res, 200, await sessions.peek());

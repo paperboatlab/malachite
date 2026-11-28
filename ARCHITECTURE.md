@@ -76,7 +76,17 @@ flowchart LR
   `.malachite/out/<note id>/<cell hash>.json` with the runtime, image digest and backend that made them.
   Interrupt answers at once: SIGINT through the daemon, and no answer within 3 s restarts the session; a
   cell still waiting for its session stops the start. A start also stops when its lease's runtime ends,
-  instead of waiting out the connect.
+  instead of waiting out the connect. Note › Run all cells (`runAll`) queues a note's cells in order across languages (each waits for the one
+  before it); after one fails or is stopped the rest are `skipped`, keeping the outputs they had. A cell whose
+  session ends says why (a restart, an interrupt it didn't heed, the hub closing, else the runtime's last log
+  lines). A closed hub's `Sessions` (`stop`: the hub switched) starts no session again and runs none of its
+  queued cells. A JulixPlot figure (`application/vnd.paperboat.figure+json`, no picture) gets its SVG asked of
+  the session (`ans`), as Malachite draws pictures, not scenes. While a session starts, the `session` event's
+  `detail` says what it does (the runtime downloaded, the hub's packages installed): the page's toast.
+- `server/packages.ts`: before a hub's first Julia session, the packages its `Manifest.toml` records that its
+  deps volume lacks (a hub copied, moved or synced, a fresh install, an example) are instantiated, as Julix
+  does (julix#47): an exec lease with the network, the project read-only. A failure lets the session start,
+  its first cell saying why.
 - `server/main.ts`: the HTTP server. The workspace is switched at runtime (`POST /api/workspace`: a known
   hub by id, a folder or a file by path, which opens the hub it lies in, `make` turning a plain folder into a
   hub, or nothing: the Start page); a plain folder answers 409 with `notHub`, as Malachite works in hubs
