@@ -1,8 +1,8 @@
 // A note: its properties (the front matter, time and author set by the app), then the body. Read shows
 // it rendered with its cells runnable in place; Edit is the Markdown itself.
-import { Icon, Key, RemoveKey, Spinner, type IconName, type MenuEntry } from "@paperboatlab/ui";
+import { Icon, Key, RemoveKey, Spinner, loadMath, mathLoaded, type IconName, type MenuEntry } from "@paperboatlab/ui";
 import { Editor, julia, python, type EditorSettings } from "@paperboatlab/ui/editor";
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { Cell, NoteData, Output, Props, Run } from "./api.ts";
 import { renderer, type Resolve } from "./markdown.ts";
@@ -160,6 +160,15 @@ export function ReadView({ note, runs, resolve, look, onLink, onRun, onStop, med
   });
   const md = useMemo(() => renderer(resolve, note.path), [resolve, note.path]);
   const parts = useMemo(() => segments(note.body, note.cells), [note.body, note.cells]);
+  // KaTeX comes with the first note that has math (the kit loads it then): the text waits for it rather than
+  // show the TeX as written for a moment
+  const [math, setMath] = useState(mathLoaded), waiting = !math && note.body.includes("$");
+  useEffect(() => {
+    if (!waiting) return;
+    let live = true;
+    loadMath().then(() => live && setMath(true), () => live && setMath(true));   // failed to load: the TeX as written
+    return () => { live = false; };
+  }, [waiting]);
   const click = (e: React.MouseEvent) => {
     const a = (e.target as HTMLElement).closest<HTMLElement>("[data-wl]");
     if (a) { e.preventDefault(); onLink(a.dataset.wl!, a.classList.contains("miss")); }
@@ -168,7 +177,7 @@ export function ReadView({ note, runs, resolve, look, onLink, onRun, onStop, med
     <article ref={doc} className="doc" onClick={click}>
       <Properties props={note.props} intact={note.intact} />
       {parts.map((p, i) => "md" in p
-        ? <div key={i} dangerouslySetInnerHTML={{ __html: md(p.md) }} />
+        ? <div key={i} dangerouslySetInnerHTML={{ __html: waiting ? "" : md(p.md) }} />
         : <CellView key={`${i}-${p.cell.hash}`} cell={p.cell} n={p.n} run={runs[p.cell.hash] ?? note.outputs[p.cell.hash]} sealed={note.sealed} look={look} onRun={() => onRun(p.cell)} onStop={() => onStop(p.cell)} />)}
       {slots.map((el, i) => createPortal(media(el.dataset.path!, el.dataset.alt ?? ""), el, `m${i}`))}
     </article>
